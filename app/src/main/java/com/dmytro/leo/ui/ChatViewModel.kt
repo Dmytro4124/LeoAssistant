@@ -14,6 +14,7 @@ import com.dmytro.leo.voice.SpeechError
 import com.dmytro.leo.voice.SpeechEvent
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
+import com.dmytro.leo.voice.TtsVoice
 import com.dmytro.leo.voice.toUserMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -42,6 +43,8 @@ data class ChatUiState(
     /** Short one-off note shown near the input, e.g. "I didn't hear anything". */
     val hint: String? = null,
     val speakerStatus: SpeakerStatus = SpeakerStatus.Initializing,
+    val voices: List<TtsVoice> = emptyList(),
+    val currentVoice: TtsVoice? = null,
 ) {
     val isBusy: Boolean get() = isThinking || voice != VoiceState.Idle
 }
@@ -63,6 +66,12 @@ class ChatViewModel(
     init {
         viewModelScope.launch {
             speaker.status.collect { status -> _state.update { it.copy(speakerStatus = status) } }
+        }
+        viewModelScope.launch {
+            speaker.voices.collect { voices -> _state.update { it.copy(voices = voices) } }
+        }
+        viewModelScope.launch {
+            speaker.currentVoice.collect { voice -> _state.update { it.copy(currentVoice = voice) } }
         }
     }
 
@@ -107,7 +116,21 @@ class ChatViewModel(
         if (_state.value.isBusy) return
         viewModelScope.launch {
             agent.reset()
-            _state.update { ChatUiState(speakerStatus = it.speakerStatus) }
+            _state.update { it.copy(messages = emptyList(), hint = null) }
+        }
+    }
+
+    /** Picks a voice and says a sample phrase with it. */
+    fun previewVoice(voice: TtsVoice) {
+        if (_state.value.isBusy) return
+        speaker.selectVoice(voice)
+        voiceJob = viewModelScope.launch {
+            setVoice(VoiceState.Speaking(VOICE_SAMPLE))
+            try {
+                speaker.speak(VOICE_SAMPLE)
+            } finally {
+                setVoice(VoiceState.Idle)
+            }
         }
     }
 
@@ -173,6 +196,8 @@ class ChatViewModel(
     }
 
     companion object {
+        private const val VOICE_SAMPLE = "Привіт! Я Лео. Так звучить мій голос — подобається?"
+
         val Factory = viewModelFactory {
             initializer {
                 val container = (this[APPLICATION_KEY] as LeoApp).container

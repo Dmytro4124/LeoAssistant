@@ -29,11 +29,15 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -43,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +67,7 @@ import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.ui.theme.LeoTheme
 import com.dmytro.leo.voice.AndroidSpeaker
 import com.dmytro.leo.voice.SpeakerStatus
+import com.dmytro.leo.voice.TtsVoice
 
 /** Main screen: chat history, text input (debug mode) and the mic button for voice. */
 @Composable
@@ -83,6 +89,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Fact
         },
         onStopVoice = viewModel::stopVoice,
         onInstallVoice = { context.openTtsVoiceInstall() },
+        onSelectVoice = viewModel::previewVoice,
     )
 }
 
@@ -108,6 +115,7 @@ private fun ChatContent(
     onMic: () -> Unit,
     onStopVoice: () -> Unit,
     onInstallVoice: () -> Unit,
+    onSelectVoice: (TtsVoice) -> Unit,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -130,6 +138,12 @@ private fun ChatContent(
             TopAppBar(
                 title = { Text(AgentConfig.NAME) },
                 actions = {
+                    VoiceMenu(
+                        voices = state.voices,
+                        current = state.currentVoice,
+                        enabled = !state.isBusy,
+                        onSelect = onSelectVoice,
+                    )
                     TextButton(onClick = onClear, enabled = state.messages.isNotEmpty() && !state.isBusy) {
                         Text("Очистити")
                     }
@@ -245,6 +259,33 @@ private fun InputBar(
     }
 }
 
+/** Voice picker in the top bar; choosing a voice also plays a sample with it. */
+@Composable
+private fun VoiceMenu(voices: List<TtsVoice>, current: TtsVoice?, enabled: Boolean, onSelect: (TtsVoice) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, enabled = enabled) {
+            Icon(painterResource(R.drawable.ic_voice), contentDescription = "Голос")
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (voices.isEmpty()) {
+                DropdownMenuItem(text = { Text("Шукаю українські голоси…") }, onClick = {}, enabled = false)
+            }
+            voices.forEach { voice ->
+                val selected = current != null && voice.engine == current.engine && voice.name == current.name
+                DropdownMenuItem(
+                    text = { Text(voice.label) },
+                    leadingIcon = { RadioButton(selected = selected, onClick = null) },
+                    onClick = {
+                        expanded = false
+                        onSelect(voice)
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun SpeakerBanner(text: String, action: String?, onAction: () -> Unit) {
     Card(
@@ -300,7 +341,7 @@ private fun ChatPreview() {
                 voice = VoiceState.Listening(partial = "яка завтра погода", level = 5f),
                 speakerStatus = SpeakerStatus.MissingUkrainianVoice,
             ),
-            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {},
+            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {}, onSelectVoice = {},
         )
     }
 }

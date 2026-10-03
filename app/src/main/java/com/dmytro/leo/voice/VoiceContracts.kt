@@ -47,9 +47,19 @@ fun SpeechError.toUserMessage(): String = when (this) {
 interface SpeechOutput {
     val status: StateFlow<SpeakerStatus>
 
+    /** Ukrainian voices of all installed TTS engines. */
+    val voices: StateFlow<List<TtsVoice>>
+    val currentVoice: StateFlow<TtsVoice?>
+
+    /** Switches the voice (and the engine, if needed); the choice is remembered. */
+    fun selectVoice(voice: TtsVoice)
+
     /** Suspends until the phrase is spoken. Cancelling the caller stops the speech. */
     suspend fun speak(text: String)
 }
+
+/** A voice of a TTS engine, e.g. engine = RHVoice package, name = "Anatol". */
+data class TtsVoice(val engine: String, val name: String, val label: String)
 
 enum class SpeakerStatus { Initializing, Ready, MissingUkrainianVoice, Failed }
 

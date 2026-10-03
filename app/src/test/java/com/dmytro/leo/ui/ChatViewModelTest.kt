@@ -12,6 +12,7 @@ import com.dmytro.leo.voice.SpeechError
 import com.dmytro.leo.voice.SpeechEvent
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
+import com.dmytro.leo.voice.TtsVoice
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +49,9 @@ class ChatViewModelTest {
 
     private class FakeSpeaker : SpeechOutput {
         override val status: StateFlow<SpeakerStatus> = MutableStateFlow(SpeakerStatus.Ready)
+        override val voices: StateFlow<List<TtsVoice>> = MutableStateFlow(emptyList())
+        override val currentVoice = MutableStateFlow<TtsVoice?>(null)
+        override fun selectVoice(voice: TtsVoice) { currentVoice.value = voice }
         val spoken = mutableListOf<String>()
         /** When set, speak() hangs until it completes (or the caller is cancelled). */
         var gate: CompletableDeferred<Unit>? = null
@@ -165,6 +169,18 @@ class ChatViewModelTest {
         assertTrue(speaker.wasInterrupted)
         assertEquals(VoiceState.Idle, vm.state.value.voice)
         assertEquals(0, focus.held)
+    }
+
+    @Test
+    fun `choosing a voice selects it and plays a sample`() = runTest {
+        val vm = viewModel(FakeSpeechInput(), FakeGemini())
+        val anatol = TtsVoice("rhvoice", "Anatol", "RHVoice — Anatol")
+
+        vm.previewVoice(anatol)
+
+        assertEquals(anatol, vm.state.value.currentVoice)
+        assertEquals(1, speaker.spoken.size)
+        assertEquals(VoiceState.Idle, vm.state.value.voice)
     }
 
     @Test
