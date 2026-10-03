@@ -5,6 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -58,6 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dmytro.leo.assistant.ChatMessage
+import com.dmytro.leo.assistant.VoiceState
 import com.dmytro.leo.R
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.ui.theme.LeoTheme
@@ -73,7 +76,9 @@ fun ChatScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+    // The mic, plus notifications for the "Лео слухає" notice while another app is open
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        val granted = result[Manifest.permission.RECORD_AUDIO] == true
         if (granted) viewModel.onMicClick() else viewModel.onMicPermissionDenied()
     }
 
@@ -83,7 +88,12 @@ fun ChatScreen(
         onClear = viewModel::clear,
         onMic = {
             if (context.hasMicPermission()) viewModel.onMicClick()
-            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            else micPermission.launch(
+                buildList {
+                    add(Manifest.permission.RECORD_AUDIO)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+                }.toTypedArray()
+            )
         },
         onStopVoice = viewModel::stopVoice,
         onInstallVoice = { context.openTtsVoiceInstall() },

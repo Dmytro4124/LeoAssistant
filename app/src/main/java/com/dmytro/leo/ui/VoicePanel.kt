@@ -29,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dmytro.leo.assistant.VoiceState
 import com.dmytro.leo.R
 
 /** Replaces the input bar during a voice exchange: animated button (tap = stop) and what is happening. */

@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -39,6 +40,7 @@ import com.dmytro.leo.voice.VoiceSettings
 @Composable
 fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     BackHandler(onBack = onBack)
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
@@ -85,6 +87,22 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
             savedSection("Плейлисти", state.playlists, "У YouTube Music: «Поділитися» плейлистом → Лео", viewModel::removePlaylist)
             savedSection("Чати Instagram, Discord, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Лео", viewModel::removeChat)
             savedSection("Як ти називаєш людей", state.contactAliases, "Скажи: «Запам'ятай, що мама — це …»", viewModel::removeAlias)
+
+            section("Швидкий виклик")
+            item(key = "widget") {
+                ListItem(
+                    headlineContent = { Text("Додати віджет на головний екран") },
+                    supportingContent = { Text("Кнопка мікрофона: одразу починає розмову") },
+                    modifier = Modifier.clickable { context.requestLeoWidget() },
+                )
+            }
+            item(key = "tile") {
+                ListItem(
+                    headlineContent = { Text("Додати плитку у швидкі налаштування") },
+                    supportingContent = { Text("Шторка → «Лео» — з будь-якого екрана") },
+                    modifier = Modifier.clickable { context.requestLeoTile() },
+                )
+            }
 
             section("Про Лео")
             item {

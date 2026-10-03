@@ -24,7 +24,7 @@ class OpenAppTool(
 
         return when (val match = AppMatcher.find(query, PreferredApps.apply(apps.list()))) {
             is AppMatcher.Match.Found ->
-                if (phone.openApp(match.app.packageName)) ToolResult.Success("Відкрито ${match.app.label}", endsConversation = true)
+                if (phone.openApp(match.app.packageName)) ToolResult.Success("Відкрито ${match.app.label}")
                 else ToolResult.Failure("${match.app.label} не вдалося запустити")
             is AppMatcher.Match.Unsure ->
                 if (match.candidates.isEmpty()) ToolResult.Failure("Додаток «$query» не знайдено на телефоні")

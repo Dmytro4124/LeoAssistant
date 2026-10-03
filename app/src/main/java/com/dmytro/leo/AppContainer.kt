@@ -1,6 +1,9 @@
 package com.dmytro.leo
 
 import android.content.Context
+import com.dmytro.leo.assistant.ChatLog
+import com.dmytro.leo.assistant.ServiceForegroundKeeper
+import com.dmytro.leo.assistant.VoiceSession
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.GeminiApi
@@ -60,6 +63,9 @@ import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
 import com.dmytro.leo.voice.VoiceSettings
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -132,10 +138,27 @@ class AppContainer(context: Context) {
     val audioFocus: AudioFocus = AndroidAudioFocus(appContext)
 
     val voiceSettings: VoiceSettings = AndroidVoiceSettings(appContext)
-    val chatHistory: ChatHistoryStore = FileChatHistoryStore(appContext)
-    val liveConversation = LiveConversation(
+    private val chatHistory: ChatHistoryStore = FileChatHistoryStore(appContext)
+    private val liveConversation = LiveConversation(
         live = LiveClient(BuildConfig.GEMINI_API_KEY, httpClient),
         mic = AndroidMicStream(),
         player = AndroidPcmPlayer(appContext),
+    )
+
+    /** Lives as long as the app process: voice conversations outlive any single screen. */
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    val chatLog = ChatLog(agentLoop, chatHistory, appScope)
+
+    val voiceSession = VoiceSession(
+        agent = agentLoop,
+        chatLog = chatLog,
+        speechInput = speechInput,
+        speaker = speaker,
+        audioFocus = audioFocus,
+        live = liveConversation,
+        voiceSettings = voiceSettings,
+        scope = appScope,
+        foreground = ServiceForegroundKeeper(appContext),
     )
 }

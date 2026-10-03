@@ -66,7 +66,7 @@ class SearchPlaceTool(private val phone: PhoneActions) : Tool {
         val query = args.string("query") ?: return ToolResult.Failure("Не вказано, що шукати")
         val link = MapsLinks.search(query)
         return if (phone.openUri(link, GOOGLE_MAPS) || phone.openUri(link)) {
-            ToolResult.Success("Карту з «$query» відкрито", endsConversation = true)
+            ToolResult.Success("Карту з «$query» відкрито")
         } else {
             ToolResult.Failure("На телефоні немає додатка карт")
         }

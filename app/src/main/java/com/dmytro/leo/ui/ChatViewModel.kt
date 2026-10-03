@@ -6,47 +6,21 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.dmytro.leo.LeoApp
+import com.dmytro.leo.assistant.ChatLog
+import com.dmytro.leo.assistant.ChatMessage
+import com.dmytro.leo.assistant.VoiceSession
+import com.dmytro.leo.assistant.VoiceState
 import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.AgentReply
-import com.dmytro.leo.brain.GeminiError
-import com.dmytro.leo.brain.ToolAction
-import com.dmytro.leo.tools.ToolResult
-import kotlinx.serialization.json.JsonPrimitive
-import com.dmytro.leo.brain.toUserMessage
-import com.dmytro.leo.data.ChatHistoryStore
-import com.dmytro.leo.data.StoredMessage
-import com.dmytro.leo.voice.AudioFocus
-import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeakerStatus
-import com.dmytro.leo.voice.SpeechError
-import com.dmytro.leo.voice.SpeechEvent
-import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
-import com.dmytro.leo.voice.VoiceMode
-import com.dmytro.leo.voice.VoiceSettings
-import com.dmytro.leo.voice.toUserMessage
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-
-data class ChatMessage(val id: Long, val author: Author, val text: String) {
-    /** Tool = a service line about an action the agent ran ("🔧 navigate_to …"). */
-    enum class Author { User, Agent, Error, Tool }
-}
-
-/** Idle → Listening → Thinking → Speaking → (Listening again if the agent asked a question) → Idle */
-sealed interface VoiceState {
-    data object Idle : VoiceState
-    data class Listening(val partial: String = "", val level: Float = 0f) : VoiceState
-    data class Thinking(val heard: String) : VoiceState
-    data class Speaking(val text: String) : VoiceState
-}
 
 data class ChatUiState(
     val messages: List<ChatMessage> = emptyList(),
@@ -62,277 +36,75 @@ data class ChatUiState(
     val isBusy: Boolean get() = isThinking || voice != VoiceState.Idle
 }
 
-/** Holds the main screen state (text chat + voice) and survives screen rotation. */
+/** The chat screen: typed messages here; voice runs in the app-wide [VoiceSession]. */
 class ChatViewModel(
     private val agent: AgentLoop,
-    private val speechInput: SpeechInput,
-    private val speaker: SpeechOutput,
-    private val audioFocus: AudioFocus,
-    private val live: LiveConversation,
-    private val voiceSettings: VoiceSettings,
-    /** Null in tests: the chat is then not kept across restarts. */
-    private val history: ChatHistoryStore? = null,
+    private val chatLog: ChatLog,
+    private val voice: VoiceSession,
+    speaker: SpeechOutput,
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(ChatUiState())
-    val state: StateFlow<ChatUiState> = _state.asStateFlow()
+    private data class Local(val isThinking: Boolean = false, val prefill: String? = null)
 
-    private var nextId = 0L
-    private var voiceJob: Job? = null
+    private val local = MutableStateFlow(Local())
 
-    init {
-        history?.let { store ->
-            viewModelScope.launch {
-                restoreHistory(store)
-                // Then keep the file in sync, at most twice a second
-                _state.map { it.messages }.distinctUntilChanged().debounce(500).collect { messages ->
-                    store.save(messages.map { StoredMessage(it.author.name, it.text) })
-                }
-            }
-        }
-        viewModelScope.launch {
-            speaker.status.collect { status -> _state.update { it.copy(speakerStatus = status) } }
-        }
-    }
+    val state: StateFlow<ChatUiState> =
+        combine(chatLog.messages, voice.state, voice.hint, speaker.status, local) { messages, voiceState, hint, speakerStatus, l ->
+            ChatUiState(messages, l.isThinking, voiceState, hint, speakerStatus, l.prefill)
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUiState())
 
     /** Typed message: the answer is shown, not spoken. */
     fun send(text: String) {
         val phrase = text.trim()
-        if (phrase.isEmpty() || _state.value.isBusy) return
+        if (phrase.isEmpty() || state.value.isBusy) return
 
-        append(ChatMessage.Author.User, phrase)
-        _state.update { it.copy(isThinking = true, hint = null) }
+        chatLog.append(ChatMessage.Author.User, phrase)
+        local.update { it.copy(isThinking = true) }
+        voice.showHint(null)
 
         viewModelScope.launch {
             when (val reply = agent.handle(phrase)) {
                 is AgentReply.Text -> {
-                    showActions(reply.actions)
-                    append(ChatMessage.Author.Agent, reply.text)
+                    chatLog.addActions(reply.actions)
+                    chatLog.append(ChatMessage.Author.Agent, reply.text)
                 }
                 is AgentReply.Error -> {
-                    showActions(reply.actions)
-                    append(ChatMessage.Author.Error, reply.message)
+                    chatLog.addActions(reply.actions)
+                    chatLog.append(ChatMessage.Author.Error, reply.message)
                 }
             }
-            _state.update { it.copy(isThinking = false) }
+            local.update { it.copy(isThinking = false) }
         }
     }
 
-    /** Mic button: starts a voice exchange, or stops the current one. */
+    /** Mic button: starts a voice conversation, or stops the current one. */
     fun onMicClick() {
         when {
-            _state.value.voice != VoiceState.Idle -> stopVoice()
-            !_state.value.isThinking -> {
-                _state.update { it.copy(hint = null) }
-                voiceJob = viewModelScope.launch {
-                    when (voiceSettings.mode.value) {
-                        VoiceMode.Live -> runLiveSession()
-                        VoiceMode.Classic -> runVoiceExchange()
-                    }
-                }
-            }
+            voice.isActive -> voice.stop()
+            !state.value.isThinking -> voice.start()
         }
     }
 
-    fun prefillInput(text: String) = _state.update { it.copy(prefill = text) }
+    fun stopVoice() = voice.stop()
 
-    fun prefillConsumed() = _state.update { it.copy(prefill = null) }
+    fun onMicPermissionDenied() =
+        voice.showHint("Без дозволу на мікрофон я тебе не почую. Його можна дати в налаштуваннях додатка.")
 
-    fun onMicPermissionDenied() {
-        _state.update { it.copy(hint = "Без дозволу на мікрофон я тебе не почую. Його можна дати в налаштуваннях додатка.") }
-    }
+    fun prefillInput(text: String) = local.update { it.copy(prefill = text) }
 
-    fun stopVoice() {
-        voiceJob?.cancel()
-        voiceJob = null
-    }
+    fun prefillConsumed() = local.update { it.copy(prefill = null) }
 
     fun clear() {
-        if (_state.value.isBusy) return
-        viewModelScope.launch {
-            agent.reset()
-            _state.update { it.copy(messages = emptyList(), hint = null) }
-        }
-    }
-
-    /** A spoken conversation with the Live model; transcripts of both sides appear in the chat. */
-    private suspend fun runLiveSession() {
-        var fallBackToClassic = false
-        audioFocus.acquire()
-        try {
-            setVoice(VoiceState.Listening())
-            var userMessageId: Long? = null
-            var agentMessageId: Long? = null
-
-            val session = LiveConversation.Session(
-                voiceName = voiceSettings.liveVoice.value,
-                systemPrompt = agent.systemPrompt(),
-                history = agent.history(),
-                tools = agent.toolDeclarations,
-                runTool = agent::runTool,
-                onUserTurn = agent::noteUserTurn,
-            )
-            live.run(session) { update ->
-                when (update) {
-                    is LiveConversation.Update.Listening -> setVoice(VoiceState.Listening(level = update.level))
-                    LiveConversation.Update.Speaking ->
-                        if (_state.value.voice !is VoiceState.Speaking) setVoice(VoiceState.Speaking(""))
-                    is LiveConversation.Update.UserTranscript ->
-                        userMessageId = upsert(userMessageId, ChatMessage.Author.User, update.text)
-                    is LiveConversation.Update.AgentTranscript ->
-                        agentMessageId = upsert(agentMessageId, ChatMessage.Author.Agent, update.text)
-                    is LiveConversation.Update.ToolUsed -> append(ChatMessage.Author.Tool, describe(update.action))
-                    is LiveConversation.Update.TurnFinished -> {
-                        // Text mode will know what was said by voice
-                        viewModelScope.launch { agent.remember(update.user, update.agent) }
-                        userMessageId = null
-                        agentMessageId = null
-                    }
-                    is LiveConversation.Update.Failed -> {
-                        val canFallBack = update.beforeReady &&
-                            update.error != GeminiError.NoNetwork && update.error != GeminiError.InvalidApiKey
-                        if (canFallBack) {
-                            fallBackToClassic = true
-                            _state.update { it.copy(hint = "Live недоступний: ${update.error.toUserMessage()} Перемикаюсь на звичайний режим.") }
-                        } else {
-                            append(ChatMessage.Author.Error, update.error.toUserMessage())
-                        }
-                    }
-                }
-            }
-        } finally {
-            audioFocus.release()
-            setVoice(VoiceState.Idle)
-        }
-        if (fallBackToClassic) runVoiceExchange()
-    }
-
-    /**
-     * Shows the chat from the previous run and gives the agent its last exchanges back,
-     * so "а що я питав учора?" and follow-ups keep working after a restart.
-     */
-    private suspend fun restoreHistory(store: ChatHistoryStore) {
-        val restored = store.load().mapNotNull { stored ->
-            val author = ChatMessage.Author.entries.firstOrNull { it.name == stored.author } ?: return@mapNotNull null
-            ChatMessage(nextId++, author, stored.text)
-        }
-        if (restored.isEmpty()) return
-        _state.update { it.copy(messages = restored + it.messages) }
-
-        // User phrase followed by the agent's answer (tool lines in between are skipped)
-        val dialog = restored.filter { it.author == ChatMessage.Author.User || it.author == ChatMessage.Author.Agent }
-        dialog.zipWithNext()
-            .filter { (q, a) -> q.author == ChatMessage.Author.User && a.author == ChatMessage.Author.Agent }
-            .takeLast(RESTORED_EXCHANGES)
-            .forEach { (q, a) -> agent.remember(q.text, a.text) }
-    }
-
-    /** Appends a message, or replaces the text of the one with [id]. Returns the message id. */
-    private fun upsert(id: Long?, author: ChatMessage.Author, text: String): Long {
-        if (id == null) return append(author, text)
-        _state.update { state ->
-            state.copy(messages = state.messages.map { if (it.id == id) it.copy(text = text) else it })
-        }
-        return id
-    }
-
-    private suspend fun runVoiceExchange() {
-        audioFocus.acquire()
-        try {
-            var listenAgain = true
-            var isFollowUp = false
-            while (listenAgain) {
-                val heard = listenOnce(quietIfNothingHeard = isFollowUp) ?: break
-                append(ChatMessage.Author.User, heard)
-
-                setVoice(VoiceState.Thinking(heard))
-                val reply = agent.handle(heard)
-                val answer = when (reply) {
-                    is AgentReply.Text -> reply.text.also {
-                        showActions(reply.actions)
-                        append(ChatMessage.Author.Agent, it)
-                    }
-                    is AgentReply.Error -> reply.message.also {
-                        showActions(reply.actions)
-                        append(ChatMessage.Author.Error, it)
-                    }
-                }
-
-                setVoice(VoiceState.Speaking(answer))
-                speaker.speak(answer)
-
-                // A clarifying question ("Якому саме Олегу?") → open the mic again automatically
-                listenAgain = reply is AgentReply.Text && answer.trimEnd().endsWith("?")
-                isFollowUp = true
-            }
-        } finally {
-            audioFocus.release()
-            setVoice(VoiceState.Idle)
-        }
-    }
-
-    /** One listening session. Returns the recognized phrase, or null if nothing usable was heard. */
-    private suspend fun listenOnce(quietIfNothingHeard: Boolean): String? {
-        setVoice(VoiceState.Listening())
-        var heard: String? = null
-        speechInput.listen().collect { event ->
-            when (event) {
-                is SpeechEvent.Partial -> updateListening { it.copy(partial = event.text) }
-                is SpeechEvent.Level -> updateListening { it.copy(level = event.rmsDb) }
-                is SpeechEvent.Final -> heard = event.text.trim().takeIf { it.isNotEmpty() }
-                is SpeechEvent.Error -> {
-                    // After a follow-up question silence just means "done", no need to complain
-                    if (!(quietIfNothingHeard && event.error == SpeechError.NoSpeech)) {
-                        _state.update { it.copy(hint = event.error.toUserMessage()) }
-                    }
-                }
-            }
-        }
-        return heard
-    }
-
-    private fun setVoice(voice: VoiceState) = _state.update { it.copy(voice = voice) }
-
-    private fun updateListening(change: (VoiceState.Listening) -> VoiceState.Listening) =
-        _state.update { state ->
-            val voice = state.voice
-            if (voice is VoiceState.Listening) state.copy(voice = change(voice)) else state
-        }
-
-    private fun showActions(actions: List<ToolAction>) = actions.forEach { append(ChatMessage.Author.Tool, describe(it)) }
-
-    /** "🔧 navigate_to: Будинок культури, driving → Навігацію запущено" */
-    private fun describe(action: ToolAction): String {
-        val args = action.args.values.joinToString { (it as? JsonPrimitive)?.content ?: it.toString() }
-        val outcome = when (val result = action.result) {
-            is ToolResult.Success -> result.message
-            is ToolResult.Failure -> "✗ " + result.message
-            is ToolResult.NeedsConfirmation -> "❔ " + result.question
-        }
-        return "🔧 ${action.name}: $args → $outcome"
-    }
-
-    private fun append(author: ChatMessage.Author, text: String): Long {
-        val id = nextId++
-        _state.update { it.copy(messages = it.messages + ChatMessage(id, author, text)) }
-        return id
+        if (state.value.isBusy) return
+        voice.showHint(null)
+        viewModelScope.launch { chatLog.clear() }
     }
 
     companion object {
-        private const val RESTORED_EXCHANGES = 10
-
         val Factory = viewModelFactory {
             initializer {
-                val container = (this[APPLICATION_KEY] as LeoApp).container
-                ChatViewModel(
-                    agent = container.agentLoop,
-                    speechInput = container.speechInput,
-                    speaker = container.speaker,
-                    audioFocus = container.audioFocus,
-                    live = container.liveConversation,
-                    voiceSettings = container.voiceSettings,
-                    history = container.chatHistory,
-                )
+                val c = (this[APPLICATION_KEY] as LeoApp).container
+                ChatViewModel(c.agentLoop, c.chatLog, c.voiceSession, c.speaker)
             }
         }
     }

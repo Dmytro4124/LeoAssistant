@@ -1,29 +1,34 @@
 package com.dmytro.leo.ui
 
+import com.dmytro.leo.assistant.ChatLog
+import com.dmytro.leo.assistant.ChatMessage.Author
+import com.dmytro.leo.assistant.ForegroundKeeper
+import com.dmytro.leo.assistant.VoiceSession
+import com.dmytro.leo.assistant.VoiceState
 import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.FakeGemini
 import com.dmytro.leo.brain.FakeGemini.Companion.answer
 import com.dmytro.leo.brain.GeminiError
 import com.dmytro.leo.brain.GeminiResult
+import com.dmytro.leo.brain.live.LiveEvent
 import com.dmytro.leo.data.ChatHistoryStore
 import com.dmytro.leo.data.StoredMessage
-import com.dmytro.leo.ui.ChatMessage.Author
 import com.dmytro.leo.voice.AudioFocus
+import com.dmytro.leo.voice.FakeLiveApi
+import com.dmytro.leo.voice.FakeMic
+import com.dmytro.leo.voice.FakePlayer
+import com.dmytro.leo.voice.FakeVoiceSettings
+import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeakerStatus
 import com.dmytro.leo.voice.SpeechError
 import com.dmytro.leo.voice.SpeechEvent
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
 import com.dmytro.leo.voice.TtsVoice
-import com.dmytro.leo.voice.FakeLiveApi
-import com.dmytro.leo.voice.FakeMic
-import com.dmytro.leo.voice.FakePlayer
-import com.dmytro.leo.voice.FakeVoiceSettings
-import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.VoiceMode
-import com.dmytro.leo.brain.live.LiveEvent
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -31,10 +36,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
-import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -99,15 +104,28 @@ class ChatViewModelTest {
     private val liveApi = FakeLiveApi()
     private val settings = FakeVoiceSettings(VoiceMode.Classic)
 
-    private fun TestScope.viewModel(speech: SpeechInput, gemini: FakeGemini, agent: AgentLoop = AgentLoop(gemini)) =
-        ChatViewModel(
+    /** The chat screen wired like in the app: shared chat log and app-wide voice session. */
+    private fun TestScope.viewModel(
+        speech: SpeechInput,
+        gemini: FakeGemini,
+        agent: AgentLoop = AgentLoop(gemini),
+        history: ChatHistoryStore? = null,
+    ): ChatViewModel {
+        // Runs eagerly on the test clock, like the app scope runs on the main thread
+        val appScope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val chatLog = ChatLog(agent, history, appScope)
+        val voice = VoiceSession(
             agent = agent,
+            chatLog = chatLog,
             speechInput = speech,
             speaker = speaker,
             audioFocus = focus,
             live = LiveConversation(liveApi, FakeMic(), FakePlayer(), now = { testScheduler.currentTime }),
             voiceSettings = settings,
+            scope = appScope,
         )
+        return ChatViewModel(agent, chatLog, voice, speaker)
+    }
 
     private fun ChatViewModel.transcript() = state.value.messages.map { it.author to it.text }
 
@@ -205,11 +223,7 @@ class ChatViewModelTest {
             override suspend fun save(messages: List<StoredMessage>) { saved = messages }
         }
         val agent = AgentLoop(FakeGemini())
-        val vm = ChatViewModel(
-            agent, FakeSpeechInput(), speaker, focus,
-            LiveConversation(liveApi, FakeMic(), FakePlayer(), now = { testScheduler.currentTime }),
-            settings, history = store,
-        )
+        val vm = viewModel(FakeSpeechInput(), FakeGemini(), agent, history = store)
         runCurrent()
 
         assertEquals(listOf(Author.User, Author.Tool, Author.Agent), vm.state.value.messages.map { it.author })
@@ -262,6 +276,33 @@ class ChatViewModelTest {
         assertEquals(1, speech.listenCount)
         assertEquals(listOf("Привіт!"), speaker.spoken)
         assertTrue(vm.state.value.hint!!.startsWith("Live недоступний"))
+    }
+
+    @Test
+    fun `a conversation holds the foreground mic service only while it runs`() = runTest {
+        val keeper = object : ForegroundKeeper {
+            var started = 0
+            var stopped = 0
+            override fun start() { started++ }
+            override fun stop() { stopped++ }
+        }
+        speaker.gate = CompletableDeferred()
+        val agent = AgentLoop(FakeGemini(answer("Слухаю")))
+        val appScope = CoroutineScope(UnconfinedTestDispatcher(testScheduler))
+        val chatLog = ChatLog(agent, null, appScope)
+        val session = VoiceSession(
+            agent, chatLog, FakeSpeechInput(listOf(SpeechEvent.Final("Привіт"))), speaker, focus,
+            LiveConversation(liveApi, FakeMic(), FakePlayer()), settings, appScope, keeper,
+        )
+
+        session.start()
+        session.start() // a second start while running does nothing
+        assertEquals(1, keeper.started)
+        assertTrue(session.isActive)
+
+        session.stop()
+        assertEquals(1, keeper.stopped)
+        assertEquals(VoiceState.Idle, session.state.value)
     }
 
     @Test
