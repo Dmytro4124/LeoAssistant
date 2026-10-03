@@ -17,6 +17,35 @@ data class GenerateContentRequest(
     val contents: List<Content>,
     val systemInstruction: Content? = null,
     val generationConfig: GenerationConfig? = null,
+    val tools: List<ToolDeclarations>? = null,
+)
+
+/** The functions the model may call. */
+@Serializable
+data class ToolDeclarations(val functionDeclarations: List<FunctionDeclaration>)
+
+@Serializable
+data class FunctionDeclaration(
+    val name: String,
+    val description: String,
+    /** JSON schema of the arguments (OpenAPI subset: OBJECT, STRING, enum, required…). */
+    val parameters: JsonObject,
+)
+
+/** The model asks the app to run a function. Live sessions add an [id]. */
+@Serializable
+data class FunctionCall(
+    val name: String,
+    val args: JsonObject = JsonObject(emptyMap()),
+    val id: String? = null,
+)
+
+/** The app's answer to a [FunctionCall]. */
+@Serializable
+data class FunctionResponse(
+    val name: String,
+    val response: JsonObject,
+    val id: String? = null,
 )
 
 /** One dialog turn. role = "user" or "model". */
@@ -40,6 +69,8 @@ data class Part(
     val text: String? = null,
     val thought: Boolean? = null,
     val thoughtSignature: String? = null,
+    val functionCall: FunctionCall? = null,
+    val functionResponse: FunctionResponse? = null,
 )
 
 @Serializable

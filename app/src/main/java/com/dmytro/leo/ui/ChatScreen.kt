@@ -342,12 +342,22 @@ private fun SpeakerBanner(text: String, action: String?, onAction: () -> Unit) {
 
 @Composable
 private fun MessageBubble(message: ChatMessage) {
+    if (message.author == ChatMessage.Author.Tool) {
+        // Service line: small and grey, not a bubble
+        Text(
+            message.text,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        return
+    }
     val isUser = message.author == ChatMessage.Author.User
     val colors = MaterialTheme.colorScheme
     val (background, foreground) = when (message.author) {
         ChatMessage.Author.User -> colors.primaryContainer to colors.onPrimaryContainer
-        ChatMessage.Author.Agent -> colors.surfaceContainerHigh to colors.onSurface
         ChatMessage.Author.Error -> colors.errorContainer to colors.onErrorContainer
+        else -> colors.surfaceContainerHigh to colors.onSurface
     }
 
     Box(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {

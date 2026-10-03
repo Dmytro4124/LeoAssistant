@@ -2,6 +2,8 @@ package com.dmytro.leo.brain.live
 
 import android.util.Log
 import com.dmytro.leo.brain.Content
+import com.dmytro.leo.brain.FunctionCall
+import com.dmytro.leo.brain.FunctionResponse
 import com.dmytro.leo.brain.GeminiError
 import com.dmytro.leo.brain.GeminiJson
 import kotlinx.coroutines.channels.Channel
@@ -27,6 +29,8 @@ sealed interface LiveEvent {
     data class OutputTranscript(val text: String) : LiveEvent
     data object Interrupted : LiveEvent
     data object TurnComplete : LiveEvent
+    /** The model asks to run functions; reply with [LiveConnection.sendToolResponse]. */
+    data class ToolCall(val calls: List<FunctionCall>) : LiveEvent
     data object GoAway : LiveEvent
     /** Final event. [error] is null for a normal close. */
     data class Closed(val error: GeminiError?) : LiveEvent
@@ -38,6 +42,7 @@ interface LiveConnection {
     fun sendHistory(turns: List<Content>)
     /** 16 kHz, 16-bit, mono PCM. */
     fun sendAudio(pcm: ByteArray)
+    fun sendToolResponse(responses: List<FunctionResponse>)
     fun close()
 }
 
@@ -114,6 +119,10 @@ class LiveClient(
                 socket.send(GeminiJson.encodeToString(LiveClientMessage(realtimeInput = LiveRealtimeInput(Blob(MIC_MIME, data)))))
             }
 
+            override fun sendToolResponse(responses: List<FunctionResponse>) {
+                socket.send(GeminiJson.encodeToString(LiveClientMessage(toolResponse = LiveToolResponse(responses))))
+            }
+
             override fun close() {
                 socket.close(1000, null)
                 events.trySend(LiveEvent.Closed(null))
@@ -126,6 +135,7 @@ class LiveClient(
         override val events: Flow<LiveEvent> = channel.receiveAsFlow()
         override fun sendHistory(turns: List<Content>) = Unit
         override fun sendAudio(pcm: ByteArray) = Unit
+        override fun sendToolResponse(responses: List<FunctionResponse>) = Unit
         override fun close() = Unit
     }
 
@@ -163,6 +173,7 @@ object LiveEventParser {
             if (content.interrupted == true) events += LiveEvent.Interrupted
             if (content.turnComplete == true) events += LiveEvent.TurnComplete
         }
+        message.toolCall?.functionCalls?.takeIf { it.isNotEmpty() }?.let { events += LiveEvent.ToolCall(it) }
         if (message.goAway != null) events += LiveEvent.GoAway
         return events
     }

@@ -1,8 +1,10 @@
 package com.dmytro.leo.voice
 
 import com.dmytro.leo.brain.Content
+import com.dmytro.leo.brain.FunctionCall
 import com.dmytro.leo.brain.GeminiError
 import com.dmytro.leo.brain.live.LiveEvent
+import com.dmytro.leo.tools.ToolResult
 import com.dmytro.leo.voice.LiveConversation.Update
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
@@ -10,6 +12,9 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -28,7 +33,15 @@ class LiveConversationTest {
         LiveConversation(api, mic, player, idleTimeoutMs = 15_000, now = { testScheduler.currentTime })
 
     private fun TestScope.start(history: List<Content> = emptyList()) =
-        launch { conversation().run("Kore", history) { updates += it } }
+        launch { conversation().run(session(history)) { updates += it } }
+
+    private fun session(history: List<Content> = emptyList()) = LiveConversation.Session(
+        voiceName = "Kore",
+        systemPrompt = "Ти Лео",
+        history = history,
+        tools = emptyList(),
+        runTool = { name, _ -> ToolResult.Success("$name виконано") },
+    )
 
     @Test
     fun `a full turn streams audio and reports both transcripts`() = runTest {
@@ -95,5 +108,19 @@ class LiveConversationTest {
         runCurrent()
         assertTrue(server.closed)
         assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `tool calls are run and answered with the same id`() = runTest {
+        val job = start()
+        val args = buildJsonObject { put("destination", "Будинок культури") }
+        server.push(LiveEvent.Ready, LiveEvent.ToolCall(listOf(FunctionCall("navigate_to", args, id = "call-1"))))
+        runCurrent()
+
+        val response = server.toolResponses.single()
+        assertEquals("call-1", response.id)
+        assertEquals("navigate_to виконано", response.response["result"]!!.jsonPrimitive.content)
+        assertTrue(updates.any { it is Update.ToolUsed && it.action.name == "navigate_to" })
+        job.cancel()
     }
 }

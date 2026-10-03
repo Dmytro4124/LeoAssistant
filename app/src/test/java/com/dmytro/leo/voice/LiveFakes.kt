@@ -1,6 +1,7 @@
 package com.dmytro.leo.voice
 
 import com.dmytro.leo.brain.Content
+import com.dmytro.leo.brain.FunctionResponse
 import com.dmytro.leo.brain.live.LiveApi
 import com.dmytro.leo.brain.live.LiveConnection
 import com.dmytro.leo.brain.live.LiveEvent
@@ -19,6 +20,7 @@ class FakeLiveConnection : LiveConnection {
 
     val history = mutableListOf<Content>()
     var audioChunksSent = 0
+    val toolResponses = mutableListOf<FunctionResponse>()
     var closed = false
 
     fun push(vararg events: LiveEvent) = events.forEach { channel.trySend(it) }
@@ -35,6 +37,10 @@ class FakeLiveConnection : LiveConnection {
 
     override fun sendAudio(pcm: ByteArray) {
         audioChunksSent++
+    }
+
+    override fun sendToolResponse(responses: List<FunctionResponse>) {
+        toolResponses += responses
     }
 
     override fun close() {

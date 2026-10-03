@@ -1,6 +1,9 @@
 package com.dmytro.leo.brain.live
 
 import com.dmytro.leo.brain.Content
+import com.dmytro.leo.brain.FunctionCall
+import com.dmytro.leo.brain.FunctionResponse
+import com.dmytro.leo.brain.ToolDeclarations
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
@@ -14,6 +17,7 @@ data class LiveClientMessage(
     val setup: LiveSetup? = null,
     val clientContent: LiveClientContent? = null,
     val realtimeInput: LiveRealtimeInput? = null,
+    val toolResponse: LiveToolResponse? = null,
 )
 
 @Serializable
@@ -25,6 +29,7 @@ data class LiveSetup(
     val inputAudioTranscription: EmptyConfig = EmptyConfig(),
     val outputAudioTranscription: EmptyConfig = EmptyConfig(),
     val contextWindowCompression: ContextWindowCompression? = null,
+    val tools: List<ToolDeclarations>? = null,
 )
 
 @Serializable
@@ -76,6 +81,7 @@ data class Blob(val mimeType: String, val data: String)
 data class LiveServerMessage(
     val setupComplete: JsonObject? = null,
     val serverContent: LiveServerContent? = null,
+    val toolCall: LiveToolCall? = null,
     val goAway: GoAway? = null,
 )
 
@@ -104,3 +110,10 @@ data class Transcription(val text: String? = null)
 /** The server will close the connection soon. */
 @Serializable
 data class GoAway(val timeLeft: String? = null)
+
+/** The model wants the app to run functions; answer with [LiveToolResponse] using the same ids. */
+@Serializable
+data class LiveToolCall(val functionCalls: List<FunctionCall> = emptyList())
+
+@Serializable
+data class LiveToolResponse(val functionResponses: List<FunctionResponse>)

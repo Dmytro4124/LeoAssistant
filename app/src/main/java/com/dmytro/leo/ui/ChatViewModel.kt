@@ -9,6 +9,9 @@ import com.dmytro.leo.LeoApp
 import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.AgentReply
 import com.dmytro.leo.brain.GeminiError
+import com.dmytro.leo.brain.ToolAction
+import com.dmytro.leo.tools.ToolResult
+import kotlinx.serialization.json.JsonPrimitive
 import com.dmytro.leo.brain.toUserMessage
 import com.dmytro.leo.voice.AudioFocus
 import com.dmytro.leo.voice.LiveConversation
@@ -29,7 +32,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class ChatMessage(val id: Long, val author: Author, val text: String) {
-    enum class Author { User, Agent, Error }
+    /** Tool = a service line about an action the agent ran ("🔧 navigate_to …"). */
+    enum class Author { User, Agent, Error, Tool }
 }
 
 /** Idle → Listening → Thinking → Speaking → (Listening again if the agent asked a question) → Idle */
@@ -100,8 +104,14 @@ class ChatViewModel(
 
         viewModelScope.launch {
             when (val reply = agent.handle(phrase)) {
-                is AgentReply.Text -> append(ChatMessage.Author.Agent, reply.text)
-                is AgentReply.Error -> append(ChatMessage.Author.Error, reply.message)
+                is AgentReply.Text -> {
+                    showActions(reply.actions)
+                    append(ChatMessage.Author.Agent, reply.text)
+                }
+                is AgentReply.Error -> {
+                    showActions(reply.actions)
+                    append(ChatMessage.Author.Error, reply.message)
+                }
             }
             _state.update { it.copy(isThinking = false) }
         }
@@ -170,7 +180,14 @@ class ChatViewModel(
             var userMessageId: Long? = null
             var agentMessageId: Long? = null
 
-            live.run(voiceSettings.liveVoice.value, agent.history()) { update ->
+            val session = LiveConversation.Session(
+                voiceName = voiceSettings.liveVoice.value,
+                systemPrompt = agent.systemPrompt(),
+                history = agent.history(),
+                tools = agent.toolDeclarations,
+                runTool = agent::runTool,
+            )
+            live.run(session) { update ->
                 when (update) {
                     is LiveConversation.Update.Listening -> setVoice(VoiceState.Listening(level = update.level))
                     LiveConversation.Update.Speaking ->
@@ -179,6 +196,7 @@ class ChatViewModel(
                         userMessageId = upsert(userMessageId, ChatMessage.Author.User, update.text)
                     is LiveConversation.Update.AgentTranscript ->
                         agentMessageId = upsert(agentMessageId, ChatMessage.Author.Agent, update.text)
+                    is LiveConversation.Update.ToolUsed -> append(ChatMessage.Author.Tool, describe(update.action))
                     is LiveConversation.Update.TurnFinished -> {
                         // Text mode will know what was said by voice
                         viewModelScope.launch { agent.remember(update.user, update.agent) }
@@ -225,8 +243,14 @@ class ChatViewModel(
                 setVoice(VoiceState.Thinking(heard))
                 val reply = agent.handle(heard)
                 val answer = when (reply) {
-                    is AgentReply.Text -> reply.text.also { append(ChatMessage.Author.Agent, it) }
-                    is AgentReply.Error -> reply.message.also { append(ChatMessage.Author.Error, it) }
+                    is AgentReply.Text -> reply.text.also {
+                        showActions(reply.actions)
+                        append(ChatMessage.Author.Agent, it)
+                    }
+                    is AgentReply.Error -> reply.message.also {
+                        showActions(reply.actions)
+                        append(ChatMessage.Author.Error, it)
+                    }
                 }
 
                 setVoice(VoiceState.Speaking(answer))
@@ -269,6 +293,18 @@ class ChatViewModel(
             val voice = state.voice
             if (voice is VoiceState.Listening) state.copy(voice = change(voice)) else state
         }
+
+    private fun showActions(actions: List<ToolAction>) = actions.forEach { append(ChatMessage.Author.Tool, describe(it)) }
+
+    /** "🔧 navigate_to: Будинок культури, driving → Навігацію запущено" */
+    private fun describe(action: ToolAction): String {
+        val args = action.args.values.joinToString { (it as? JsonPrimitive)?.content ?: it.toString() }
+        val outcome = when (val result = action.result) {
+            is ToolResult.Success -> result.message
+            is ToolResult.Failure -> "✗ " + result.message
+        }
+        return "🔧 ${action.name}: $args → $outcome"
+    }
 
     private fun append(author: ChatMessage.Author, text: String): Long {
         val id = nextId++

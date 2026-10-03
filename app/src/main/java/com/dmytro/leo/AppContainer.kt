@@ -6,6 +6,16 @@ import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.GeminiApi
 import com.dmytro.leo.brain.GeminiClient
 import com.dmytro.leo.brain.live.LiveClient
+import com.dmytro.leo.data.AndroidInstalledApps
+import com.dmytro.leo.data.AndroidPlacesStore
+import com.dmytro.leo.data.PlacesStore
+import com.dmytro.leo.tools.AndroidPhoneActions
+import com.dmytro.leo.tools.NavigateTool
+import com.dmytro.leo.tools.OpenAppTool
+import com.dmytro.leo.tools.PhoneActions
+import com.dmytro.leo.tools.SavePlaceTool
+import com.dmytro.leo.tools.SearchPlaceTool
+import com.dmytro.leo.tools.ToolRegistry
 import com.dmytro.leo.voice.AndroidAudioFocus
 import com.dmytro.leo.voice.AndroidMicStream
 import com.dmytro.leo.voice.AndroidPcmPlayer
@@ -39,7 +49,19 @@ class AppContainer(context: Context) {
         httpClient = httpClient,
     )
 
-    val agentLoop = AgentLoop(gemini)
+    val places: PlacesStore = AndroidPlacesStore(appContext)
+    private val phone: PhoneActions = AndroidPhoneActions(appContext)
+
+    val tools = ToolRegistry(
+        listOf(
+            OpenAppTool(AndroidInstalledApps(appContext), phone),
+            NavigateTool(places, phone),
+            SearchPlaceTool(phone),
+            SavePlaceTool(places),
+        )
+    )
+
+    val agentLoop = AgentLoop(gemini, tools, promptNotes = places::promptNote)
 
     val speechInput: SpeechInput = AndroidSpeechInput(appContext)
     val speaker: SpeechOutput by lazy { AndroidSpeaker(appContext) }

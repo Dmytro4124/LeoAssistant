@@ -2,8 +2,10 @@ package com.dmytro.leo.voice
 
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.brain.Content
+import com.dmytro.leo.brain.FunctionResponse
 import com.dmytro.leo.brain.GeminiError
-import com.dmytro.leo.brain.SystemPrompt
+import com.dmytro.leo.brain.ToolAction
+import com.dmytro.leo.brain.ToolDeclarations
 import com.dmytro.leo.brain.live.ContextWindowCompression
 import com.dmytro.leo.brain.live.LiveApi
 import com.dmytro.leo.brain.live.LiveEvent
@@ -13,13 +15,13 @@ import com.dmytro.leo.brain.live.PrebuiltVoiceConfig
 import com.dmytro.leo.brain.live.SlidingWindow
 import com.dmytro.leo.brain.live.SpeechConfig
 import com.dmytro.leo.brain.live.VoiceConfig
+import com.dmytro.leo.tools.ToolResult
+import kotlinx.serialization.json.JsonObject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.time.Clock
-import java.time.ZonedDateTime
 import kotlin.math.log10
 import kotlin.math.sqrt
 
@@ -32,7 +34,6 @@ class LiveConversation(
     private val live: LiveApi,
     private val mic: MicStream,
     private val player: PcmPlayer,
-    private val clock: Clock = Clock.systemDefaultZone(),
     private val idleTimeoutMs: Long = 15_000,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
@@ -46,12 +47,23 @@ class LiveConversation(
         /** Text of the model's current turn so far. */
         data class AgentTranscript(val text: String) : Update
         data class TurnFinished(val user: String, val agent: String) : Update
+        /** A tool was run at the model's request. */
+        data class ToolUsed(val action: ToolAction) : Update
         /** [beforeReady] = the session never started, so another voice mode can be tried. */
         data class Failed(val error: GeminiError, val beforeReady: Boolean) : Update
     }
 
-    suspend fun run(voiceName: String, history: List<Content>, onUpdate: (Update) -> Unit) = coroutineScope {
-        val connection = live.connect(setup(voiceName))
+    /** What a session needs from the agent: the same prompt and tools as the text chat. */
+    class Session(
+        val voiceName: String,
+        val systemPrompt: String,
+        val history: List<Content>,
+        val tools: List<ToolDeclarations>,
+        val runTool: suspend (name: String, args: JsonObject) -> ToolResult,
+    )
+
+    suspend fun run(session: Session, onUpdate: (Update) -> Unit) = coroutineScope {
+        val connection = live.connect(setup(session))
         player.start()
 
         val userText = StringBuilder()
@@ -90,7 +102,7 @@ class LiveConversation(
                     LiveEvent.Ready -> {
                         ready = true
                         lastActivity = now()
-                        connection.sendHistory(history)
+                        connection.sendHistory(session.history)
                         onUpdate(Update.Listening(0f))
                         micJob = launch {
                             mic.stream().collect { chunk ->
@@ -123,6 +135,15 @@ class LiveConversation(
                         finishTurn()
                         lastActivity = now()
                     }
+                    is LiveEvent.ToolCall -> {
+                        lastActivity = now()
+                        val responses = event.calls.map { call ->
+                            val result = session.runTool(call.name, call.args)
+                            onUpdate(Update.ToolUsed(ToolAction(call.name, call.args, result)))
+                            FunctionResponse(call.name, result.toJson(), call.id)
+                        }
+                        connection.sendToolResponse(responses)
+                    }
                     LiveEvent.GoAway -> connection.close()
                     is LiveEvent.Closed -> {
                         event.error?.let { onUpdate(Update.Failed(it, beforeReady = !ready)) }
@@ -140,12 +161,13 @@ class LiveConversation(
         }
     }
 
-    private fun setup(voiceName: String) = LiveSetup(
+    private fun setup(session: Session) = LiveSetup(
         model = "models/${AgentConfig.LIVE_MODEL}",
         generationConfig = LiveGenerationConfig(
-            speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(voiceName))),
+            speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(session.voiceName))),
         ),
-        systemInstruction = Content.system(SystemPrompt.build(ZonedDateTime.now(clock))),
+        systemInstruction = Content.system(session.systemPrompt),
+        tools = session.tools.ifEmpty { null },
         // Keeps long conversations under the free-tier tokens-per-minute limit
         contextWindowCompression = ContextWindowCompression(
             slidingWindow = SlidingWindow(targetTokens = 16_000),
