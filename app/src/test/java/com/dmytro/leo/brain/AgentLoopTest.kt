@@ -10,21 +10,9 @@ import java.time.ZoneId
 
 class AgentLoopTest {
 
-    /** Returns queued results and remembers every request. */
-    private class FakeGemini(vararg results: GeminiResult) : GeminiApi {
-        private val queue = ArrayDeque(results.toList())
-        val requests = mutableListOf<GenerateContentRequest>()
-
-        override suspend fun generateContent(request: GenerateContentRequest): GeminiResult {
-            requests += request
-            return queue.removeFirst()
-        }
-    }
-
     private val clock = Clock.fixed(Instant.parse("2026-10-03T15:30:00Z"), ZoneId.of("Europe/Kyiv"))
 
-    private fun answer(text: String) =
-        GeminiResult.Success(Content(role = "model", parts = listOf(Part(text = text, thoughtSignature = "sig"))))
+    private fun answer(text: String) = FakeGemini.answer(text)
 
     @Test
     fun `reply text is returned and the exchange is remembered`() = runTest {

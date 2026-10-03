@@ -1,8 +1,17 @@
 package com.dmytro.leo.ui
 
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.speech.tts.TextToSpeech
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
@@ -36,22 +47,56 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dmytro.leo.R
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.ui.theme.LeoTheme
+import com.dmytro.leo.voice.AndroidSpeaker
+import com.dmytro.leo.voice.SpeakerStatus
 
-/** Text chat with the agent. Stays in the app as a debug mode for testing commands without voice. */
+/** Main screen: chat history, text input (debug mode) and the mic button for voice. */
 @Composable
 fun ChatScreen(viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Factory)) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    ChatContent(state = state, onSend = viewModel::send, onClear = viewModel::clear)
+    val context = LocalContext.current
+
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) viewModel.onMicClick() else viewModel.onMicPermissionDenied()
+    }
+
+    ChatContent(
+        state = state,
+        onSend = viewModel::send,
+        onClear = viewModel::clear,
+        onMic = {
+            if (context.hasMicPermission()) viewModel.onMicClick()
+            else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        },
+        onStopVoice = viewModel::stopVoice,
+        onInstallVoice = { context.openTtsVoiceInstall() },
+    )
+}
+
+private fun Context.hasMicPermission() =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+/** Opens the Google TTS screen where voice data (the Ukrainian voice) can be downloaded. */
+private fun Context.openTtsVoiceInstall() {
+    val intent = Intent(TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA).setPackage(AndroidSpeaker.GOOGLE_TTS)
+    try {
+        startActivity(intent)
+    } catch (e: ActivityNotFoundException) {
+        startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,6 +105,9 @@ private fun ChatContent(
     state: ChatUiState,
     onSend: (String) -> Unit,
     onClear: () -> Unit,
+    onMic: () -> Unit,
+    onStopVoice: () -> Unit,
+    onInstallVoice: () -> Unit,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -71,7 +119,7 @@ private fun ChatContent(
     }
 
     fun submit() {
-        if (input.isNotBlank() && !state.isThinking) {
+        if (input.isNotBlank() && !state.isBusy) {
             onSend(input)
             input = ""
         }
@@ -82,40 +130,52 @@ private fun ChatContent(
             TopAppBar(
                 title = { Text(AgentConfig.NAME) },
                 actions = {
-                    TextButton(onClick = onClear, enabled = state.messages.isNotEmpty() && !state.isThinking) {
+                    TextButton(onClick = onClear, enabled = state.messages.isNotEmpty() && !state.isBusy) {
                         Text("Очистити")
                     }
                 },
             )
         },
         bottomBar = {
-            Row(
-                modifier = Modifier
+            Column(
+                Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.surface)
                     .navigationBarsPadding()
                     .imePadding()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Повідомлення…") },
-                    maxLines = 4,
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences,
-                        imeAction = ImeAction.Send,
-                    ),
-                    keyboardActions = KeyboardActions(onSend = { submit() }),
-                )
-                FilledIconButton(
-                    onClick = ::submit,
-                    enabled = input.isNotBlank() && !state.isThinking,
-                ) {
-                    Icon(painterResource(R.drawable.ic_send), contentDescription = "Надіслати")
+                when (state.speakerStatus) {
+                    SpeakerStatus.MissingUkrainianVoice -> SpeakerBanner(
+                        text = "Український голос для озвучення не встановлено.",
+                        action = "Встановити",
+                        onAction = onInstallVoice,
+                    )
+                    SpeakerStatus.Failed -> SpeakerBanner(
+                        text = "Синтез мови недоступний: відповіді будуть лише текстом.",
+                        action = null,
+                        onAction = {},
+                    )
+                    else -> Unit
+                }
+                state.hint?.let {
+                    Text(
+                        it,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
+                    )
+                }
+                if (state.voice != VoiceState.Idle) {
+                    VoicePanel(voice = state.voice, onStop = onStopVoice)
+                } else {
+                    InputBar(
+                        input = input,
+                        onInputChange = { input = it },
+                        enabled = !state.isThinking,
+                        onSubmit = ::submit,
+                        onMic = onMic,
+                    )
                 }
             }
         },
@@ -123,9 +183,10 @@ private fun ChatContent(
         if (state.messages.isEmpty() && !state.isThinking) {
             Box(Modifier.fillMaxSize().padding(innerPadding).padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
-                    "Напиши щось, наприклад:\n«Привіт, що ти вмієш?»",
+                    "Натисни мікрофон і скажи, наприклад:\n«Привіт, що ти вмієш?»",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
                 )
             }
         } else {
@@ -142,6 +203,57 @@ private fun ChatContent(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Text field + one round button: mic when the field is empty, send when there is text. */
+@Composable
+private fun InputBar(
+    input: String,
+    onInputChange: (String) -> Unit,
+    enabled: Boolean,
+    onSubmit: () -> Unit,
+    onMic: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = onInputChange,
+            modifier = Modifier.weight(1f),
+            placeholder = { Text("Повідомлення…") },
+            maxLines = 4,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Sentences,
+                imeAction = ImeAction.Send,
+            ),
+            keyboardActions = KeyboardActions(onSend = { onSubmit() }),
+        )
+        if (input.isBlank()) {
+            FilledIconButton(onClick = onMic, enabled = enabled) {
+                Icon(painterResource(R.drawable.ic_mic), contentDescription = "Говорити")
+            }
+        } else {
+            FilledIconButton(onClick = onSubmit, enabled = enabled) {
+                Icon(painterResource(R.drawable.ic_send), contentDescription = "Надіслати")
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpeakerBanner(text: String, action: String?, onAction: () -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(text, modifier = Modifier.weight(1f).padding(vertical = 12.dp), style = MaterialTheme.typography.bodyMedium)
+            if (action != null) TextButton(onClick = onAction) { Text(action) }
         }
     }
 }
@@ -184,12 +296,11 @@ private fun ChatPreview() {
                 messages = listOf(
                     ChatMessage(0, ChatMessage.Author.User, "Привіт, що ти вмієш?"),
                     ChatMessage(1, ChatMessage.Author.Agent, "Привіт! Я Лео. Поки що відповідаю на запитання, а скоро навчуся керувати телефоном."),
-                    ChatMessage(2, ChatMessage.Author.Error, "Немає з'єднання з інтернетом."),
                 ),
-                isThinking = true,
+                voice = VoiceState.Listening(partial = "яка завтра погода", level = 5f),
+                speakerStatus = SpeakerStatus.MissingUkrainianVoice,
             ),
-            onSend = {},
-            onClear = {},
+            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {},
         )
     }
 }
