@@ -63,6 +63,24 @@ data class TtsVoice(val engine: String, val name: String, val label: String)
 
 enum class SpeakerStatus { Initializing, Ready, MissingUkrainianVoice, Failed }
 
+/** Raw microphone audio for the Live mode. */
+interface MicStream {
+    /** 16 kHz, 16-bit, mono PCM chunks of ~100 ms. Recording stops when collection is cancelled. */
+    fun stream(): Flow<ByteArray>
+}
+
+/** Plays raw PCM from the Live model as it arrives. */
+interface PcmPlayer {
+    /** True while queued audio is still being played. */
+    val isSpeaking: Boolean
+    fun start()
+    /** 24 kHz, 16-bit, mono PCM. */
+    fun play(pcm: ByteArray)
+    /** Drops everything queued (the user talked over the model). */
+    fun interrupt()
+    fun stop()
+}
+
 /** Pauses other audio (music, video) while the assistant listens and talks. */
 interface AudioFocus {
     fun acquire()

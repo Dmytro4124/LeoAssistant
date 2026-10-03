@@ -13,6 +13,13 @@ import com.dmytro.leo.voice.SpeechEvent
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
 import com.dmytro.leo.voice.TtsVoice
+import com.dmytro.leo.voice.FakeLiveApi
+import com.dmytro.leo.voice.FakeMic
+import com.dmytro.leo.voice.FakePlayer
+import com.dmytro.leo.voice.FakeVoiceSettings
+import com.dmytro.leo.voice.LiveConversation
+import com.dmytro.leo.voice.VoiceMode
+import com.dmytro.leo.brain.live.LiveEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +28,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -84,8 +93,18 @@ class ChatViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun viewModel(speech: SpeechInput, gemini: FakeGemini) =
-        ChatViewModel(AgentLoop(gemini), speech, speaker, focus)
+    private val liveApi = FakeLiveApi()
+    private val settings = FakeVoiceSettings(VoiceMode.Classic)
+
+    private fun TestScope.viewModel(speech: SpeechInput, gemini: FakeGemini, agent: AgentLoop = AgentLoop(gemini)) =
+        ChatViewModel(
+            agent = agent,
+            speechInput = speech,
+            speaker = speaker,
+            audioFocus = focus,
+            live = LiveConversation(liveApi, FakeMic(), FakePlayer(), now = { testScheduler.currentTime }),
+            voiceSettings = settings,
+        )
 
     private fun ChatViewModel.transcript() = state.value.messages.map { it.author to it.text }
 
@@ -181,6 +200,50 @@ class ChatViewModelTest {
         assertEquals(anatol, vm.state.value.currentVoice)
         assertEquals(1, speaker.spoken.size)
         assertEquals(VoiceState.Idle, vm.state.value.voice)
+    }
+
+    @Test
+    fun `live session shows growing transcripts and shares history with text mode`() = runTest {
+        settings.useLive("Kore")
+        val agent = AgentLoop(FakeGemini())
+        val vm = viewModel(FakeSpeechInput(), FakeGemini(), agent)
+        val server = liveApi.connection
+
+        vm.onMicClick()
+        server.push(LiveEvent.Ready, LiveEvent.InputTranscript("Привіт,"))
+        runCurrent()
+        assertEquals(listOf(Author.User to "Привіт,"), vm.transcript())
+
+        server.push(
+            LiveEvent.InputTranscript(" Лео"),
+            LiveEvent.Audio(ByteArray(4)),
+            LiveEvent.OutputTranscript("Привіт!"),
+            LiveEvent.TurnComplete,
+        )
+        runCurrent()
+        // The user's bubble was updated in place, not duplicated
+        assertEquals(listOf(Author.User to "Привіт, Лео", Author.Agent to "Привіт!"), vm.transcript())
+
+        vm.stopVoice()
+        runCurrent()
+        assertEquals(VoiceState.Idle, vm.state.value.voice)
+        assertEquals(0, focus.held)
+        assertEquals(listOf("Привіт, Лео", "Привіт!"), agent.history().map { it.parts.single().text })
+    }
+
+    @Test
+    fun `when live is unavailable the classic mode answers instead`() = runTest {
+        settings.useLive("Charon")
+        liveApi.connection.serverClose(LiveEvent.Closed(GeminiError.RateLimited(null)))
+        val speech = FakeSpeechInput(listOf(SpeechEvent.Final("Привіт")))
+        val vm = viewModel(speech, FakeGemini(answer("Привіт!")))
+
+        vm.onMicClick()
+        runCurrent()
+
+        assertEquals(1, speech.listenCount)
+        assertEquals(listOf("Привіт!"), speaker.spoken)
+        assertTrue(vm.state.value.hint!!.startsWith("Live недоступний"))
     }
 
     @Test

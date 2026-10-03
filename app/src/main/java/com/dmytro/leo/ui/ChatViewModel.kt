@@ -8,13 +8,18 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.dmytro.leo.LeoApp
 import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.AgentReply
+import com.dmytro.leo.brain.GeminiError
+import com.dmytro.leo.brain.toUserMessage
 import com.dmytro.leo.voice.AudioFocus
+import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeakerStatus
 import com.dmytro.leo.voice.SpeechError
 import com.dmytro.leo.voice.SpeechEvent
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
 import com.dmytro.leo.voice.TtsVoice
+import com.dmytro.leo.voice.VoiceMode
+import com.dmytro.leo.voice.VoiceSettings
 import com.dmytro.leo.voice.toUserMessage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,6 +50,8 @@ data class ChatUiState(
     val speakerStatus: SpeakerStatus = SpeakerStatus.Initializing,
     val voices: List<TtsVoice> = emptyList(),
     val currentVoice: TtsVoice? = null,
+    val voiceMode: VoiceMode = VoiceMode.Live,
+    val liveVoice: String = VoiceSettings.DEFAULT_LIVE_VOICE,
 ) {
     val isBusy: Boolean get() = isThinking || voice != VoiceState.Idle
 }
@@ -55,6 +62,8 @@ class ChatViewModel(
     private val speechInput: SpeechInput,
     private val speaker: SpeechOutput,
     private val audioFocus: AudioFocus,
+    private val live: LiveConversation,
+    private val voiceSettings: VoiceSettings,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState())
@@ -72,6 +81,12 @@ class ChatViewModel(
         }
         viewModelScope.launch {
             speaker.currentVoice.collect { voice -> _state.update { it.copy(currentVoice = voice) } }
+        }
+        viewModelScope.launch {
+            voiceSettings.mode.collect { mode -> _state.update { it.copy(voiceMode = mode) } }
+        }
+        viewModelScope.launch {
+            voiceSettings.liveVoice.collect { voice -> _state.update { it.copy(liveVoice = voice) } }
         }
     }
 
@@ -98,7 +113,12 @@ class ChatViewModel(
             _state.value.voice != VoiceState.Idle -> stopVoice()
             !_state.value.isThinking -> {
                 _state.update { it.copy(hint = null) }
-                voiceJob = viewModelScope.launch { runVoiceExchange() }
+                voiceJob = viewModelScope.launch {
+                    when (voiceSettings.mode.value) {
+                        VoiceMode.Live -> runLiveSession()
+                        VoiceMode.Classic -> runVoiceExchange()
+                    }
+                }
             }
         }
     }
@@ -120,9 +140,16 @@ class ChatViewModel(
         }
     }
 
-    /** Picks a voice and says a sample phrase with it. */
+    /** Live mode with the given voice for the next conversations. */
+    fun selectLiveVoice(voiceName: String) {
+        if (_state.value.isBusy) return
+        voiceSettings.useLive(voiceName)
+    }
+
+    /** Classic mode with this TTS voice; plays a sample phrase with it. */
     fun previewVoice(voice: TtsVoice) {
         if (_state.value.isBusy) return
+        voiceSettings.useClassic()
         speaker.selectVoice(voice)
         voiceJob = viewModelScope.launch {
             setVoice(VoiceState.Speaking(VOICE_SAMPLE))
@@ -132,6 +159,58 @@ class ChatViewModel(
                 setVoice(VoiceState.Idle)
             }
         }
+    }
+
+    /** A spoken conversation with the Live model; transcripts of both sides appear in the chat. */
+    private suspend fun runLiveSession() {
+        var fallBackToClassic = false
+        audioFocus.acquire()
+        try {
+            setVoice(VoiceState.Listening())
+            var userMessageId: Long? = null
+            var agentMessageId: Long? = null
+
+            live.run(voiceSettings.liveVoice.value, agent.history()) { update ->
+                when (update) {
+                    is LiveConversation.Update.Listening -> setVoice(VoiceState.Listening(level = update.level))
+                    LiveConversation.Update.Speaking ->
+                        if (_state.value.voice !is VoiceState.Speaking) setVoice(VoiceState.Speaking(""))
+                    is LiveConversation.Update.UserTranscript ->
+                        userMessageId = upsert(userMessageId, ChatMessage.Author.User, update.text)
+                    is LiveConversation.Update.AgentTranscript ->
+                        agentMessageId = upsert(agentMessageId, ChatMessage.Author.Agent, update.text)
+                    is LiveConversation.Update.TurnFinished -> {
+                        // Text mode will know what was said by voice
+                        viewModelScope.launch { agent.remember(update.user, update.agent) }
+                        userMessageId = null
+                        agentMessageId = null
+                    }
+                    is LiveConversation.Update.Failed -> {
+                        val canFallBack = update.beforeReady &&
+                            update.error != GeminiError.NoNetwork && update.error != GeminiError.InvalidApiKey
+                        if (canFallBack) {
+                            fallBackToClassic = true
+                            _state.update { it.copy(hint = "Live недоступний: ${update.error.toUserMessage()} Перемикаюсь на звичайний режим.") }
+                        } else {
+                            append(ChatMessage.Author.Error, update.error.toUserMessage())
+                        }
+                    }
+                }
+            }
+        } finally {
+            audioFocus.release()
+            setVoice(VoiceState.Idle)
+        }
+        if (fallBackToClassic) runVoiceExchange()
+    }
+
+    /** Appends a message, or replaces the text of the one with [id]. Returns the message id. */
+    private fun upsert(id: Long?, author: ChatMessage.Author, text: String): Long {
+        if (id == null) return append(author, text)
+        _state.update { state ->
+            state.copy(messages = state.messages.map { if (it.id == id) it.copy(text = text) else it })
+        }
+        return id
     }
 
     private suspend fun runVoiceExchange() {
@@ -191,8 +270,10 @@ class ChatViewModel(
             if (voice is VoiceState.Listening) state.copy(voice = change(voice)) else state
         }
 
-    private fun append(author: ChatMessage.Author, text: String) {
-        _state.update { it.copy(messages = it.messages + ChatMessage(nextId++, author, text)) }
+    private fun append(author: ChatMessage.Author, text: String): Long {
+        val id = nextId++
+        _state.update { it.copy(messages = it.messages + ChatMessage(id, author, text)) }
+        return id
     }
 
     companion object {
@@ -206,6 +287,8 @@ class ChatViewModel(
                     speechInput = container.speechInput,
                     speaker = container.speaker,
                     audioFocus = container.audioFocus,
+                    live = container.liveConversation,
+                    voiceSettings = container.voiceSettings,
                 )
             }
         }

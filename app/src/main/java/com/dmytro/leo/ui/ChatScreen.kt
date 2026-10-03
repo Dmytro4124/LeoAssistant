@@ -33,6 +33,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -68,6 +69,8 @@ import com.dmytro.leo.ui.theme.LeoTheme
 import com.dmytro.leo.voice.AndroidSpeaker
 import com.dmytro.leo.voice.SpeakerStatus
 import com.dmytro.leo.voice.TtsVoice
+import com.dmytro.leo.voice.VoiceMode
+import com.dmytro.leo.voice.VoiceSettings
 
 /** Main screen: chat history, text input (debug mode) and the mic button for voice. */
 @Composable
@@ -90,6 +93,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Fact
         onStopVoice = viewModel::stopVoice,
         onInstallVoice = { context.openTtsVoiceInstall() },
         onSelectVoice = viewModel::previewVoice,
+        onSelectLiveVoice = viewModel::selectLiveVoice,
     )
 }
 
@@ -116,6 +120,7 @@ private fun ChatContent(
     onStopVoice: () -> Unit,
     onInstallVoice: () -> Unit,
     onSelectVoice: (TtsVoice) -> Unit,
+    onSelectLiveVoice: (String) -> Unit,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -139,10 +144,10 @@ private fun ChatContent(
                 title = { Text(AgentConfig.NAME) },
                 actions = {
                     VoiceMenu(
-                        voices = state.voices,
-                        current = state.currentVoice,
+                        state = state,
                         enabled = !state.isBusy,
-                        onSelect = onSelectVoice,
+                        onSelectLive = onSelectLiveVoice,
+                        onSelectTts = onSelectVoice,
                     )
                     TextButton(onClick = onClear, enabled = state.messages.isNotEmpty() && !state.isBusy) {
                         Text("Очистити")
@@ -259,31 +264,67 @@ private fun InputBar(
     }
 }
 
-/** Voice picker in the top bar; choosing a voice also plays a sample with it. */
+/**
+ * Voice picker in the top bar. A Live voice switches to the Live mode; a TTS voice
+ * switches to the classic mode and plays a sample.
+ */
 @Composable
-private fun VoiceMenu(voices: List<TtsVoice>, current: TtsVoice?, enabled: Boolean, onSelect: (TtsVoice) -> Unit) {
+private fun VoiceMenu(
+    state: ChatUiState,
+    enabled: Boolean,
+    onSelectLive: (String) -> Unit,
+    onSelectTts: (TtsVoice) -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }, enabled = enabled) {
             Icon(painterResource(R.drawable.ic_voice), contentDescription = "Голос")
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            if (voices.isEmpty()) {
+            MenuHeader("Розмова (Gemini Live)")
+            VoiceSettings.LIVE_VOICES.forEach { voice ->
+                DropdownMenuItem(
+                    text = { Text("${voice.name} — ${voice.description}") },
+                    leadingIcon = {
+                        RadioButton(selected = state.voiceMode == VoiceMode.Live && state.liveVoice == voice.name, onClick = null)
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelectLive(voice.name)
+                    },
+                )
+            }
+
+            HorizontalDivider()
+            MenuHeader("Класичний режим")
+            if (state.voices.isEmpty()) {
                 DropdownMenuItem(text = { Text("Шукаю українські голоси…") }, onClick = {}, enabled = false)
             }
-            voices.forEach { voice ->
-                val selected = current != null && voice.engine == current.engine && voice.name == current.name
+            val current = state.currentVoice
+            state.voices.forEach { voice ->
+                val selected = state.voiceMode == VoiceMode.Classic &&
+                    current != null && voice.engine == current.engine && voice.name == current.name
                 DropdownMenuItem(
                     text = { Text(voice.label) },
                     leadingIcon = { RadioButton(selected = selected, onClick = null) },
                     onClick = {
                         expanded = false
-                        onSelect(voice)
+                        onSelectTts(voice)
                     },
                 )
             }
         }
     }
+}
+
+@Composable
+private fun MenuHeader(text: String) {
+    Text(
+        text,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.labelLarge,
+        color = MaterialTheme.colorScheme.primary,
+    )
 }
 
 @Composable
@@ -341,7 +382,7 @@ private fun ChatPreview() {
                 voice = VoiceState.Listening(partial = "яка завтра погода", level = 5f),
                 speakerStatus = SpeakerStatus.MissingUkrainianVoice,
             ),
-            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {}, onSelectVoice = {},
+            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {}, onSelectVoice = {}, onSelectLiveVoice = {},
         )
     }
 }

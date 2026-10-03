@@ -51,4 +51,19 @@ class AgentLoop(
     }
 
     suspend fun reset() = mutex.withLock { conversation.clear() }
+
+    /** Dialog so far as plain text turns, to give a Live voice session the same context. */
+    suspend fun history(): List<Content> = mutex.withLock {
+        conversation.messages.mapNotNull { turn ->
+            val text = turn.parts.filter { it.thought != true }.mapNotNull { it.text }.joinToString("").trim()
+            if (text.isEmpty()) null else Content(role = turn.role, parts = listOf(Part(text = text)))
+        }
+    }
+
+    /** Adds an exchange that happened elsewhere (a Live voice session) to the shared history. */
+    suspend fun remember(userText: String, agentText: String) = mutex.withLock {
+        if (userText.isNotBlank() && agentText.isNotBlank()) {
+            conversation.add(Content.user(userText), Content(role = "model", parts = listOf(Part(text = agentText))))
+        }
+    }
 }
