@@ -6,25 +6,39 @@ import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.GeminiApi
 import com.dmytro.leo.brain.GeminiClient
 import com.dmytro.leo.brain.live.LiveClient
+import com.dmytro.leo.data.AndroidChatStore
+import com.dmytro.leo.data.AndroidContactAliases
+import com.dmytro.leo.data.AndroidContacts
 import com.dmytro.leo.data.AndroidInstalledApps
+import com.dmytro.leo.data.AndroidOwnNumber
 import com.dmytro.leo.data.AndroidPlacesStore
 import com.dmytro.leo.data.AndroidPlaylistStore
 import com.dmytro.leo.data.PlacesStore
 import com.dmytro.leo.data.PlaylistStore
 import com.dmytro.leo.data.YouTubeMusicSearch
+import com.dmytro.leo.tools.AccessibilityAutoSender
+import com.dmytro.leo.tools.AndroidCommActions
 import com.dmytro.leo.tools.AndroidMediaActions
 import com.dmytro.leo.tools.AndroidPhoneActions
+import com.dmytro.leo.tools.CallTool
+import com.dmytro.leo.tools.ConfirmationGate
+import com.dmytro.leo.tools.FindContactTool
 import com.dmytro.leo.tools.MediaActions
 import com.dmytro.leo.tools.MediaControlTool
 import com.dmytro.leo.tools.NavigateTool
 import com.dmytro.leo.tools.OpenAppTool
 import com.dmytro.leo.tools.PhoneActions
 import com.dmytro.leo.tools.PlayMusicTool
+import com.dmytro.leo.tools.RememberContactTool
 import com.dmytro.leo.tools.SavePlaceTool
+import com.dmytro.leo.tools.SaveChatTool
 import com.dmytro.leo.tools.SavePlaylistTool
 import com.dmytro.leo.tools.SearchPlaceTool
+import com.dmytro.leo.tools.SendMessageTool
+import com.dmytro.leo.tools.SendSmsTool
 import com.dmytro.leo.tools.SetVolumeTool
 import com.dmytro.leo.tools.ToolRegistry
+import com.dmytro.leo.tools.UserTurns
 import com.dmytro.leo.voice.AndroidAudioFocus
 import com.dmytro.leo.voice.AndroidMicStream
 import com.dmytro.leo.voice.AndroidPcmPlayer
@@ -64,6 +78,14 @@ class AppContainer(context: Context) {
     private val media: MediaActions = AndroidMediaActions(appContext)
     private val phone: PhoneActions = AndroidPhoneActions(appContext)
 
+    private val contacts = AndroidContacts(appContext)
+    private val contactAliases = AndroidContactAliases(appContext)
+    private val chats = AndroidChatStore(appContext)
+    private val ownNumber = AndroidOwnNumber(appContext)
+    private val comm = AndroidCommActions(appContext)
+    private val userTurns = UserTurns()
+    private val confirmations = ConfirmationGate(userTurns)
+
     val tools = ToolRegistry(
         listOf(
             OpenAppTool(installedApps, phone),
@@ -74,13 +96,20 @@ class AppContainer(context: Context) {
             SavePlaylistTool(playlists),
             MediaControlTool(media),
             SetVolumeTool(media),
+            FindContactTool(contacts, contactAliases),
+            RememberContactTool(contactAliases),
+            CallTool(contacts, contactAliases, ownNumber, confirmations, comm),
+            SendSmsTool(contacts, contactAliases, ownNumber, confirmations, comm),
+            SendMessageTool(contacts, contactAliases, ownNumber, chats, confirmations, phone, AccessibilityAutoSender(appContext)),
+            SaveChatTool(chats),
         )
     )
 
     val agentLoop = AgentLoop(
         gemini,
         tools,
-        promptNotes = { listOf(places.promptNote(), playlists.promptNote()).filter { it.isNotEmpty() }.joinToString("\n\n") },
+        promptNotes = { listOf(places.promptNote(), playlists.promptNote(), chats.promptNote()).filter { it.isNotEmpty() }.joinToString("\n\n") },
+        userTurns = userTurns,
     )
 
     val speechInput: SpeechInput = AndroidSpeechInput(appContext)

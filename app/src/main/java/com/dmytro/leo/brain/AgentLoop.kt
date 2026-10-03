@@ -2,6 +2,7 @@ package com.dmytro.leo.brain
 
 import com.dmytro.leo.tools.ToolRegistry
 import com.dmytro.leo.tools.ToolResult
+import com.dmytro.leo.tools.UserTurns
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
@@ -32,6 +33,8 @@ class AgentLoop(
     private val clock: Clock = Clock.systemDefaultZone(),
     /** Extra facts for the system prompt, read on every request (e.g. saved places). */
     private val promptNotes: () -> String = { "" },
+    /** Shared with the confirmation gate: every user phrase counts, typed or spoken. */
+    private val userTurns: UserTurns = UserTurns(),
     maxHistoryMessages: Int = AgentConfig.MAX_HISTORY_MESSAGES,
 ) {
     private val conversation = Conversation(maxHistoryMessages)
@@ -44,7 +47,11 @@ class AgentLoop(
     /** The same instructions for the text chat and for Live voice sessions. */
     fun systemPrompt(): String = SystemPrompt.build(ZonedDateTime.now(clock), promptNotes())
 
+    /** A Live voice session heard the user start a new phrase. */
+    fun noteUserTurn() = userTurns.next()
+
     suspend fun handle(userText: String): AgentReply = mutex.withLock {
+        userTurns.next()
         // This exchange: the user's turn, then model calls and our function responses
         val exchange = mutableListOf(Content.user(userText))
         val actions = mutableListOf<ToolAction>()

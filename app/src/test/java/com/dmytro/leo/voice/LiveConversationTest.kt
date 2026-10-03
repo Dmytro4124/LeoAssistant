@@ -114,9 +114,10 @@ class LiveConversationTest {
     fun `session ends after the model confirms music or navigation`() = runTest {
         val job = launch {
             conversation().run(session().let {
-                LiveConversation.Session(it.voiceName, it.systemPrompt, it.history, it.tools) { _, _ ->
-                    ToolResult.Success("Вмикаю", endsConversation = true)
-                }
+                LiveConversation.Session(
+                    it.voiceName, it.systemPrompt, it.history, it.tools,
+                    runTool = { _, _ -> ToolResult.Success("Вмикаю", endsConversation = true) },
+                )
             }) { updates += it }
         }
         server.push(LiveEvent.Ready, LiveEvent.ToolCall(listOf(FunctionCall("play_music"))))
@@ -128,6 +129,26 @@ class LiveConversationTest {
         runCurrent()
         assertTrue(server.closed)
         assertTrue(job.isCompleted)
+    }
+
+    @Test
+    fun `each new spoken phrase counts as a user turn`() = runTest {
+        var turns = 0
+        val job = launch {
+            conversation().run(session().let {
+                LiveConversation.Session(it.voiceName, it.systemPrompt, it.history, it.tools, it.runTool, onUserTurn = { turns++ })
+            }) { updates += it }
+        }
+        server.push(
+            LiveEvent.Ready,
+            LiveEvent.InputTranscript("Напиши"), LiveEvent.InputTranscript(" Олегу"),
+            LiveEvent.OutputTranscript("Надіслати?"), LiveEvent.TurnComplete,
+            LiveEvent.InputTranscript("Так"),
+        )
+        runCurrent()
+
+        assertEquals("one per phrase, not per transcript chunk", 2, turns)
+        job.cancel()
     }
 
     @Test

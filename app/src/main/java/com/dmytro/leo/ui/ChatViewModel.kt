@@ -192,6 +192,7 @@ class ChatViewModel(
                 history = agent.history(),
                 tools = agent.toolDeclarations,
                 runTool = agent::runTool,
+                onUserTurn = agent::noteUserTurn,
             )
             live.run(session) { update ->
                 when (update) {
@@ -308,6 +309,7 @@ class ChatViewModel(
         val outcome = when (val result = action.result) {
             is ToolResult.Success -> result.message
             is ToolResult.Failure -> "✗ " + result.message
+            is ToolResult.NeedsConfirmation -> "❔ " + result.question
         }
         return "🔧 ${action.name}: $args → $outcome"
     }

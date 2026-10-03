@@ -30,10 +30,23 @@ sealed interface ToolResult {
     data class Success(val message: String, val endsConversation: Boolean = false) : ToolResult
     data class Failure(val message: String) : ToolResult
 
+    /** Nothing done yet: the model must ask [question] and call again with [token] after "так". */
+    data class NeedsConfirmation(val question: String, val token: String) : ToolResult
+
     fun toJson(): JsonObject = buildJsonObject {
         when (this@ToolResult) {
             is Success -> put("result", message)
             is Failure -> put("error", message)
+            is NeedsConfirmation -> {
+                put("needs_confirmation", question)
+                put("confirmation", token)
+                put(
+                    "instruction",
+                    "Нічого ще не виконано. Постав користувачу це питання і дочекайся відповіді. " +
+                        "Якщо він підтвердить — виклич інструмент ще раз з тими самими аргументами і confirmation=\"$token\". " +
+                        "Якщо відмовиться або змінить текст чи адресата — не викликай з цим токеном.",
+                )
+            }
         }
     }
 }

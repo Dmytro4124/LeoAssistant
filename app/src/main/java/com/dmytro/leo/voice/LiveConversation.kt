@@ -60,6 +60,8 @@ class LiveConversation(
         val history: List<Content>,
         val tools: List<ToolDeclarations>,
         val runTool: suspend (name: String, args: JsonObject) -> ToolResult,
+        /** Called when the user starts a new phrase (counts as an answer to a confirmation). */
+        val onUserTurn: () -> Unit = {},
     )
 
     suspend fun run(session: Session, onUpdate: (Update) -> Unit) = coroutineScope {
@@ -121,6 +123,7 @@ class LiveConversation(
                     is LiveEvent.InputTranscript -> {
                         // A new user phrase after the model's answer starts a new turn
                         if (agentText.isNotEmpty()) finishTurn()
+                        if (userText.isEmpty()) session.onUserTurn()
                         userText.append(event.text)
                         lastActivity = now()
                         onUpdate(Update.UserTranscript(userText.toString().trim()))

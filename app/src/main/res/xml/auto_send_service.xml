@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sees only these five messengers; Лео uses it to press "Надіслати" after a voice confirmation -->
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/auto_send_description"
+    android:notificationTimeout="100"
+    android:packageNames="org.telegram.messenger,com.whatsapp,com.viber.voip,com.instagram.android,com.discord" />

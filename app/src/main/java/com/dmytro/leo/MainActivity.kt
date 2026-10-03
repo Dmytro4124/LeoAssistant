@@ -6,6 +6,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import com.dmytro.leo.data.ChatStore
 import com.dmytro.leo.ui.ChatScreen
 import com.dmytro.leo.ui.ChatViewModel
 import com.dmytro.leo.ui.theme.LeoTheme
@@ -35,7 +36,11 @@ class MainActivity : ComponentActivity() {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()
         if (text.isEmpty()) return
-        val draft = if ("list=" in text) "Запам'ятай плейлист: $text" else text
+        val draft = when {
+            "list=" in text -> "Запам'ятай плейлист: $text"
+            ChatStore.chatFromLink(text) != null -> "Запам'ятай чат: $text"
+            else -> text
+        }
         viewModel.prefillInput(draft)
     }
 }

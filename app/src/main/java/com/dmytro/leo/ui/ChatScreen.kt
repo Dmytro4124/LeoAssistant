@@ -95,6 +95,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Fact
         onSelectVoice = viewModel::previewVoice,
         onSelectLiveVoice = viewModel::selectLiveVoice,
         onPrefillConsumed = viewModel::prefillConsumed,
+        banners = { SetupBanners() },
     )
 }
 
@@ -123,6 +124,7 @@ private fun ChatContent(
     onSelectVoice: (TtsVoice) -> Unit,
     onSelectLiveVoice: (String) -> Unit,
     onPrefillConsumed: () -> Unit,
+    banners: @Composable () -> Unit = {},
 ) {
     var input by rememberSaveable { mutableStateOf("") }
 
@@ -173,6 +175,7 @@ private fun ChatContent(
                     .navigationBarsPadding()
                     .imePadding()
             ) {
+                banners()
                 when (state.speakerStatus) {
                     SpeakerStatus.MissingUkrainianVoice -> SpeakerBanner(
                         text = "Український голос для озвучення не встановлено.",

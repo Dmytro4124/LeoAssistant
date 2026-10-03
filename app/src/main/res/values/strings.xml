@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Лео</string>
+    <string name="auto_send_label">Лео: надсилання повідомлень</string>
+    <string name="auto_send_description">Після того як ти голосом підтвердиш повідомлення, Лео відкриває чат у Telegram, WhatsApp, Viber, Instagram чи Discord, вписує цей текст і натискає «Надіслати». Сервіс бачить лише ці месенджери, не чіпає твоїх чернеток і нічого не робить без твого підтвердження.</string>
 </resources>
