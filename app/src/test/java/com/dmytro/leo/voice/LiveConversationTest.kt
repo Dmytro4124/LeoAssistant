@@ -111,6 +111,26 @@ class LiveConversationTest {
     }
 
     @Test
+    fun `session ends after the model confirms music or navigation`() = runTest {
+        val job = launch {
+            conversation().run(session().let {
+                LiveConversation.Session(it.voiceName, it.systemPrompt, it.history, it.tools) { _, _ ->
+                    ToolResult.Success("Вмикаю", endsConversation = true)
+                }
+            }) { updates += it }
+        }
+        server.push(LiveEvent.Ready, LiveEvent.ToolCall(listOf(FunctionCall("play_music"))))
+        runCurrent()
+        assertFalse("not before the confirmation is spoken", server.closed)
+
+        server.push(LiveEvent.Audio(ByteArray(10)), LiveEvent.OutputTranscript("Вмикаю"), LiveEvent.TurnComplete)
+        advanceTimeBy(300)
+        runCurrent()
+        assertTrue(server.closed)
+        assertTrue(job.isCompleted)
+    }
+
+    @Test
     fun `tool calls are run and answered with the same id`() = runTest {
         val job = start()
         val args = buildJsonObject { put("destination", "Будинок культури") }

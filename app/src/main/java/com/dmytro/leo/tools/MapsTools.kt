@@ -46,9 +46,9 @@ class NavigateTool(
         val link = MapsLinks.navigation(destination, args.string("mode"))
 
         return when {
-            phone.openUri(link, GOOGLE_MAPS) -> ToolResult.Success("Навігацію до «$destination» запущено")
+            phone.openUri(link, GOOGLE_MAPS) -> ToolResult.Success("Навігацію до «$destination» запущено", endsConversation = true)
             // No Google Maps: let any map app show the place
-            phone.openUri(MapsLinks.search(destination)) -> ToolResult.Success("Google Maps немає, місце відкрито в іншій карті")
+            phone.openUri(MapsLinks.search(destination)) -> ToolResult.Success("Google Maps немає, місце відкрито в іншій карті", endsConversation = true)
             else -> ToolResult.Failure("На телефоні немає додатка карт")
         }
     }
@@ -66,7 +66,7 @@ class SearchPlaceTool(private val phone: PhoneActions) : Tool {
         val query = args.string("query") ?: return ToolResult.Failure("Не вказано, що шукати")
         val link = MapsLinks.search(query)
         return if (phone.openUri(link, GOOGLE_MAPS) || phone.openUri(link)) {
-            ToolResult.Success("Карту з «$query» відкрито")
+            ToolResult.Success("Карту з «$query» відкрито", endsConversation = true)
         } else {
             ToolResult.Failure("На телефоні немає додатка карт")
         }

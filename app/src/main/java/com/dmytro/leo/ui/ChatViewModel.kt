@@ -56,6 +56,8 @@ data class ChatUiState(
     val currentVoice: TtsVoice? = null,
     val voiceMode: VoiceMode = VoiceMode.Live,
     val liveVoice: String = VoiceSettings.DEFAULT_LIVE_VOICE,
+    /** Text to put into the input field once (e.g. a link shared from another app). */
+    val prefill: String? = null,
 ) {
     val isBusy: Boolean get() = isThinking || voice != VoiceState.Idle
 }
@@ -132,6 +134,10 @@ class ChatViewModel(
             }
         }
     }
+
+    fun prefillInput(text: String) = _state.update { it.copy(prefill = text) }
+
+    fun prefillConsumed() = _state.update { it.copy(prefill = null) }
 
     fun onMicPermissionDenied() {
         _state.update { it.copy(hint = "Без дозволу на мікрофон я тебе не почую. Його можна дати в налаштуваннях додатка.") }

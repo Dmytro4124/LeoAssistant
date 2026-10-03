@@ -2,6 +2,7 @@ package com.dmytro.leo.tools
 
 import com.dmytro.leo.data.AppMatcher
 import com.dmytro.leo.data.InstalledApps
+import com.dmytro.leo.data.PreferredApps
 import kotlinx.serialization.json.JsonObject
 
 class OpenAppTool(
@@ -21,9 +22,9 @@ class OpenAppTool(
     override suspend fun execute(args: JsonObject): ToolResult {
         val query = args.string("name") ?: return ToolResult.Failure("Не вказано назву додатка")
 
-        return when (val match = AppMatcher.find(query, apps.list())) {
+        return when (val match = AppMatcher.find(query, PreferredApps.apply(apps.list()))) {
             is AppMatcher.Match.Found ->
-                if (phone.openApp(match.app.packageName)) ToolResult.Success("Відкрито ${match.app.label}")
+                if (phone.openApp(match.app.packageName)) ToolResult.Success("Відкрито ${match.app.label}", endsConversation = true)
                 else ToolResult.Failure("${match.app.label} не вдалося запустити")
             is AppMatcher.Match.Unsure ->
                 if (match.candidates.isEmpty()) ToolResult.Failure("Додаток «$query» не знайдено на телефоні")

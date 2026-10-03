@@ -16,6 +16,8 @@ object AppMatcher {
         val ranked = apps
             .map { it to score(query, it.label) }
             .sortedByDescending { it.second }
+            // Two labels of one app (e.g. "YT Music" and "RVX Music" → same package) are not rivals
+            .distinctBy { it.first.packageName }
         val (best, bestScore) = ranked.firstOrNull() ?: return Match.Unsure(emptyList())
         val secondScore = ranked.getOrNull(1)?.second ?: 0.0
 

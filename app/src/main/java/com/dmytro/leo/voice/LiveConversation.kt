@@ -72,6 +72,11 @@ class LiveConversation(
         var lastActivity = now()
         var micJob: Job? = null
 
+        // After music or navigation starts, the session ends once the model has confirmed it
+        var endAfterAction = false
+        var confirmedAfterAction = false
+        var spokeAfterAction = false
+
         fun finishTurn() {
             val user = userText.toString().trim()
             val agent = agentText.toString().trim()
@@ -89,7 +94,9 @@ class LiveConversation(
                 if (speaking) lastActivity = now()
                 if (wasSpeaking && !speaking) onUpdate(Update.Listening(0f))
                 wasSpeaking = speaking
-                if (ready && !speaking && now() - lastActivity > idleTimeoutMs) {
+                val actionDone = endAfterAction && !speaking &&
+                    ((spokeAfterAction && confirmedAfterAction) || now() - lastActivity > CONFIRM_WAIT_MS)
+                if (actionDone || (ready && !speaking && now() - lastActivity > idleTimeoutMs)) {
                     connection.close()
                     break
                 }
@@ -120,6 +127,7 @@ class LiveConversation(
                     }
                     is LiveEvent.Audio -> {
                         player.play(event.pcm)
+                        if (endAfterAction) spokeAfterAction = true
                         lastActivity = now()
                         onUpdate(Update.Speaking)
                     }
@@ -133,6 +141,7 @@ class LiveConversation(
                     }
                     LiveEvent.TurnComplete -> {
                         finishTurn()
+                        if (spokeAfterAction) confirmedAfterAction = true
                         lastActivity = now()
                     }
                     is LiveEvent.ToolCall -> {
@@ -140,6 +149,7 @@ class LiveConversation(
                         val responses = event.calls.map { call ->
                             val result = session.runTool(call.name, call.args)
                             onUpdate(Update.ToolUsed(ToolAction(call.name, call.args, result)))
+                            if (result is ToolResult.Success && result.endsConversation) endAfterAction = true
                             FunctionResponse(call.name, result.toJson(), call.id)
                         }
                         connection.sendToolResponse(responses)
@@ -174,6 +184,11 @@ class LiveConversation(
             triggerTokens = 24_000,
         ),
     )
+
+    private companion object {
+        /** How long to wait for the spoken confirmation of an action before closing anyway. */
+        const val CONFIRM_WAIT_MS = 5_000L
+    }
 
     /** RMS loudness of 16-bit PCM, scaled like SpeechRecognizer's rmsdB (about -2..10). */
     private fun loudnessDb(pcm: ByteArray): Float {

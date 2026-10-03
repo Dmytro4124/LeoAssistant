@@ -8,13 +8,22 @@ import com.dmytro.leo.brain.GeminiClient
 import com.dmytro.leo.brain.live.LiveClient
 import com.dmytro.leo.data.AndroidInstalledApps
 import com.dmytro.leo.data.AndroidPlacesStore
+import com.dmytro.leo.data.AndroidPlaylistStore
 import com.dmytro.leo.data.PlacesStore
+import com.dmytro.leo.data.PlaylistStore
+import com.dmytro.leo.data.YouTubeMusicSearch
+import com.dmytro.leo.tools.AndroidMediaActions
 import com.dmytro.leo.tools.AndroidPhoneActions
+import com.dmytro.leo.tools.MediaActions
+import com.dmytro.leo.tools.MediaControlTool
 import com.dmytro.leo.tools.NavigateTool
 import com.dmytro.leo.tools.OpenAppTool
 import com.dmytro.leo.tools.PhoneActions
+import com.dmytro.leo.tools.PlayMusicTool
 import com.dmytro.leo.tools.SavePlaceTool
+import com.dmytro.leo.tools.SavePlaylistTool
 import com.dmytro.leo.tools.SearchPlaceTool
+import com.dmytro.leo.tools.SetVolumeTool
 import com.dmytro.leo.tools.ToolRegistry
 import com.dmytro.leo.voice.AndroidAudioFocus
 import com.dmytro.leo.voice.AndroidMicStream
@@ -50,18 +59,29 @@ class AppContainer(context: Context) {
     )
 
     val places: PlacesStore = AndroidPlacesStore(appContext)
+    val playlists: PlaylistStore = AndroidPlaylistStore(appContext)
+    private val installedApps = AndroidInstalledApps(appContext)
+    private val media: MediaActions = AndroidMediaActions(appContext)
     private val phone: PhoneActions = AndroidPhoneActions(appContext)
 
     val tools = ToolRegistry(
         listOf(
-            OpenAppTool(AndroidInstalledApps(appContext), phone),
+            OpenAppTool(installedApps, phone),
             NavigateTool(places, phone),
             SearchPlaceTool(phone),
             SavePlaceTool(places),
+            PlayMusicTool(YouTubeMusicSearch(httpClient), playlists, installedApps, phone),
+            SavePlaylistTool(playlists),
+            MediaControlTool(media),
+            SetVolumeTool(media),
         )
     )
 
-    val agentLoop = AgentLoop(gemini, tools, promptNotes = places::promptNote)
+    val agentLoop = AgentLoop(
+        gemini,
+        tools,
+        promptNotes = { listOf(places.promptNote(), playlists.promptNote()).filter { it.isNotEmpty() }.joinToString("\n\n") },
+    )
 
     val speechInput: SpeechInput = AndroidSpeechInput(appContext)
     val speaker: SpeechOutput by lazy { AndroidSpeaker(appContext) }

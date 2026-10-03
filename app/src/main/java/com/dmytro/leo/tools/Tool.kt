@@ -23,7 +23,11 @@ interface Tool {
 
 /** Outcome of a tool, sent back to Gemini, which then tells the user in its own words. */
 sealed interface ToolResult {
-    data class Success(val message: String) : ToolResult
+    /**
+     * [endsConversation]: the action takes over the screen or the sound (music, navigation),
+     * so a voice session should end once the agent has confirmed it.
+     */
+    data class Success(val message: String, val endsConversation: Boolean = false) : ToolResult
     data class Failure(val message: String) : ToolResult
 
     fun toJson(): JsonObject = buildJsonObject {

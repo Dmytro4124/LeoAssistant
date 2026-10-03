@@ -94,6 +94,7 @@ fun ChatScreen(viewModel: ChatViewModel = viewModel(factory = ChatViewModel.Fact
         onInstallVoice = { context.openTtsVoiceInstall() },
         onSelectVoice = viewModel::previewVoice,
         onSelectLiveVoice = viewModel::selectLiveVoice,
+        onPrefillConsumed = viewModel::prefillConsumed,
     )
 }
 
@@ -121,8 +122,17 @@ private fun ChatContent(
     onInstallVoice: () -> Unit,
     onSelectVoice: (TtsVoice) -> Unit,
     onSelectLiveVoice: (String) -> Unit,
+    onPrefillConsumed: () -> Unit,
 ) {
     var input by rememberSaveable { mutableStateOf("") }
+
+    // A link shared from another app lands in the input field, ready to edit and send
+    LaunchedEffect(state.prefill) {
+        state.prefill?.let {
+            input = it
+            onPrefillConsumed()
+        }
+    }
     val listState = rememberLazyListState()
 
     // Keep the newest message in view
@@ -392,7 +402,7 @@ private fun ChatPreview() {
                 voice = VoiceState.Listening(partial = "яка завтра погода", level = 5f),
                 speakerStatus = SpeakerStatus.MissingUkrainianVoice,
             ),
-            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {}, onSelectVoice = {}, onSelectLiveVoice = {},
+            onSend = {}, onClear = {}, onMic = {}, onStopVoice = {}, onInstallVoice = {}, onSelectVoice = {}, onSelectLiveVoice = {}, onPrefillConsumed = {},
         )
     }
 }
