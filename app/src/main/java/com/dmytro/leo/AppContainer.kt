@@ -7,12 +7,18 @@ import com.dmytro.leo.brain.GeminiApi
 import com.dmytro.leo.brain.GeminiClient
 import com.dmytro.leo.brain.live.LiveClient
 import com.dmytro.leo.data.AndroidChatStore
+import com.dmytro.leo.data.ChatHistoryStore
+import com.dmytro.leo.data.ChatStore
+import com.dmytro.leo.data.ContactAliases
+import com.dmytro.leo.data.ContactsSource
+import com.dmytro.leo.data.FileChatHistoryStore
 import com.dmytro.leo.data.AndroidContactAliases
 import com.dmytro.leo.data.AndroidContacts
 import com.dmytro.leo.data.AndroidInstalledApps
 import com.dmytro.leo.data.AndroidOwnNumber
 import com.dmytro.leo.data.AndroidPlacesStore
 import com.dmytro.leo.data.AndroidPlaylistStore
+import com.dmytro.leo.data.OkHttpGet
 import com.dmytro.leo.data.PlacesStore
 import com.dmytro.leo.data.PlaylistStore
 import com.dmytro.leo.data.YouTubeMusicSearch
@@ -21,10 +27,12 @@ import com.dmytro.leo.tools.AndroidCommActions
 import com.dmytro.leo.tools.AndroidMediaActions
 import com.dmytro.leo.tools.AndroidPhoneActions
 import com.dmytro.leo.tools.CallTool
+import com.dmytro.leo.tools.ExchangeRateTool
 import com.dmytro.leo.tools.ConfirmationGate
 import com.dmytro.leo.tools.FindContactTool
 import com.dmytro.leo.tools.MediaActions
 import com.dmytro.leo.tools.MediaControlTool
+import com.dmytro.leo.tools.NewsTool
 import com.dmytro.leo.tools.NavigateTool
 import com.dmytro.leo.tools.OpenAppTool
 import com.dmytro.leo.tools.PhoneActions
@@ -39,6 +47,8 @@ import com.dmytro.leo.tools.SendSmsTool
 import com.dmytro.leo.tools.SetVolumeTool
 import com.dmytro.leo.tools.ToolRegistry
 import com.dmytro.leo.tools.UserTurns
+import com.dmytro.leo.tools.WeatherTool
+import com.dmytro.leo.tools.WikipediaTool
 import com.dmytro.leo.voice.AndroidAudioFocus
 import com.dmytro.leo.voice.AndroidMicStream
 import com.dmytro.leo.voice.AndroidPcmPlayer
@@ -78,9 +88,10 @@ class AppContainer(context: Context) {
     private val media: MediaActions = AndroidMediaActions(appContext)
     private val phone: PhoneActions = AndroidPhoneActions(appContext)
 
-    private val contacts = AndroidContacts(appContext)
-    private val contactAliases = AndroidContactAliases(appContext)
-    private val chats = AndroidChatStore(appContext)
+    val contacts: ContactsSource = AndroidContacts(appContext)
+    val contactAliases: ContactAliases = AndroidContactAliases(appContext)
+    val chats: ChatStore = AndroidChatStore(appContext)
+    private val web = OkHttpGet(httpClient)
     private val ownNumber = AndroidOwnNumber(appContext)
     private val comm = AndroidCommActions(appContext)
     private val userTurns = UserTurns()
@@ -102,6 +113,10 @@ class AppContainer(context: Context) {
             SendSmsTool(contacts, contactAliases, ownNumber, confirmations, comm),
             SendMessageTool(contacts, contactAliases, ownNumber, chats, confirmations, phone, AccessibilityAutoSender(appContext)),
             SaveChatTool(chats),
+            WeatherTool(web),
+            ExchangeRateTool(web),
+            NewsTool(web),
+            WikipediaTool(web),
         )
     )
 
@@ -117,6 +132,7 @@ class AppContainer(context: Context) {
     val audioFocus: AudioFocus = AndroidAudioFocus(appContext)
 
     val voiceSettings: VoiceSettings = AndroidVoiceSettings(appContext)
+    val chatHistory: ChatHistoryStore = FileChatHistoryStore(appContext)
     val liveConversation = LiveConversation(
         live = LiveClient(BuildConfig.GEMINI_API_KEY, httpClient),
         mic = AndroidMicStream(),

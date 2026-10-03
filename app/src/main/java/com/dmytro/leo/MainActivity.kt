@@ -6,9 +6,14 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import com.dmytro.leo.data.ChatStore
 import com.dmytro.leo.ui.ChatScreen
 import com.dmytro.leo.ui.ChatViewModel
+import com.dmytro.leo.ui.SettingsScreen
 import com.dmytro.leo.ui.theme.LeoTheme
 
 class MainActivity : ComponentActivity() {
@@ -21,7 +26,13 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handleShare(intent)
         setContent {
             LeoTheme {
-                ChatScreen(viewModel)
+                // Two screens only, so a flag is enough (no navigation library)
+                var showSettings by rememberSaveable { mutableStateOf(false) }
+                if (showSettings) {
+                    SettingsScreen(onBack = { showSettings = false })
+                } else {
+                    ChatScreen(viewModel, onOpenSettings = { showSettings = true })
+                }
             }
         }
     }
@@ -31,7 +42,7 @@ class MainActivity : ComponentActivity() {
         handleShare(intent)
     }
 
-    /** A link shared to Лео from another app, e.g. a playlist from YouTube Music. */
+    /** A link shared to Лео from another app: a playlist, an Instagram profile, a Discord message… */
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim().orEmpty()

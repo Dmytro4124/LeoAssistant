@@ -5,6 +5,8 @@ import com.dmytro.leo.brain.FakeGemini
 import com.dmytro.leo.brain.FakeGemini.Companion.answer
 import com.dmytro.leo.brain.GeminiError
 import com.dmytro.leo.brain.GeminiResult
+import com.dmytro.leo.data.ChatHistoryStore
+import com.dmytro.leo.data.StoredMessage
 import com.dmytro.leo.ui.ChatMessage.Author
 import com.dmytro.leo.voice.AudioFocus
 import com.dmytro.leo.voice.SpeakerStatus
@@ -29,6 +31,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
@@ -191,15 +194,30 @@ class ChatViewModelTest {
     }
 
     @Test
-    fun `choosing a voice selects it and plays a sample`() = runTest {
-        val vm = viewModel(FakeSpeechInput(), FakeGemini())
-        val anatol = TtsVoice("rhvoice", "Anatol", "RHVoice — Anatol")
+    fun `chat history survives a restart and gives the agent its context back`() = runTest {
+        val store = object : ChatHistoryStore {
+            var saved: List<StoredMessage> = listOf(
+                StoredMessage("User", "Мене звати Дмитро"),
+                StoredMessage("Tool", "🔧 щось"),
+                StoredMessage("Agent", "Приємно, Дмитре!"),
+            )
+            override suspend fun load() = saved
+            override suspend fun save(messages: List<StoredMessage>) { saved = messages }
+        }
+        val agent = AgentLoop(FakeGemini())
+        val vm = ChatViewModel(
+            agent, FakeSpeechInput(), speaker, focus,
+            LiveConversation(liveApi, FakeMic(), FakePlayer(), now = { testScheduler.currentTime }),
+            settings, history = store,
+        )
+        runCurrent()
 
-        vm.previewVoice(anatol)
+        assertEquals(listOf(Author.User, Author.Tool, Author.Agent), vm.state.value.messages.map { it.author })
+        assertEquals(listOf("Мене звати Дмитро", "Приємно, Дмитре!"), agent.history().map { it.parts.single().text })
 
-        assertEquals(anatol, vm.state.value.currentVoice)
-        assertEquals(1, speaker.spoken.size)
-        assertEquals(VoiceState.Idle, vm.state.value.voice)
+        vm.clear()
+        advanceTimeBy(1_000)
+        assertTrue("clearing the chat also clears the saved history", store.saved.isEmpty())
     }
 
     @Test

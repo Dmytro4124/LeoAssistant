@@ -7,6 +7,7 @@ import androidx.core.content.edit
 interface PlaylistStore {
     fun all(): Map<String, String>
     fun save(name: String, playlistId: String)
+    fun remove(name: String)
 
     fun find(name: String): String? = all()[normalizeName(name)]
 
@@ -38,6 +39,10 @@ class AndroidPlaylistStore(context: Context) : PlaylistStore {
 
     override fun all(): Map<String, String> =
         prefs.all.mapNotNull { (key, value) -> (value as? String)?.let { key to it } }.toMap().toSortedMap()
+
+    override fun remove(name: String) {
+        prefs.edit { remove(name) }
+    }
 
     override fun save(name: String, playlistId: String) {
         prefs.edit { putString(PlaylistStore.normalizeName(name), playlistId) }

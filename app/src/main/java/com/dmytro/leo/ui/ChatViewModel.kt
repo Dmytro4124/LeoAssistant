@@ -13,6 +13,8 @@ import com.dmytro.leo.brain.ToolAction
 import com.dmytro.leo.tools.ToolResult
 import kotlinx.serialization.json.JsonPrimitive
 import com.dmytro.leo.brain.toUserMessage
+import com.dmytro.leo.data.ChatHistoryStore
+import com.dmytro.leo.data.StoredMessage
 import com.dmytro.leo.voice.AudioFocus
 import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeakerStatus
@@ -20,7 +22,6 @@ import com.dmytro.leo.voice.SpeechError
 import com.dmytro.leo.voice.SpeechEvent
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
-import com.dmytro.leo.voice.TtsVoice
 import com.dmytro.leo.voice.VoiceMode
 import com.dmytro.leo.voice.VoiceSettings
 import com.dmytro.leo.voice.toUserMessage
@@ -28,6 +29,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -52,10 +56,6 @@ data class ChatUiState(
     /** Short one-off note shown near the input, e.g. "I didn't hear anything". */
     val hint: String? = null,
     val speakerStatus: SpeakerStatus = SpeakerStatus.Initializing,
-    val voices: List<TtsVoice> = emptyList(),
-    val currentVoice: TtsVoice? = null,
-    val voiceMode: VoiceMode = VoiceMode.Live,
-    val liveVoice: String = VoiceSettings.DEFAULT_LIVE_VOICE,
     /** Text to put into the input field once (e.g. a link shared from another app). */
     val prefill: String? = null,
 ) {
@@ -70,6 +70,8 @@ class ChatViewModel(
     private val audioFocus: AudioFocus,
     private val live: LiveConversation,
     private val voiceSettings: VoiceSettings,
+    /** Null in tests: the chat is then not kept across restarts. */
+    private val history: ChatHistoryStore? = null,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ChatUiState())
@@ -79,20 +81,17 @@ class ChatViewModel(
     private var voiceJob: Job? = null
 
     init {
+        history?.let { store ->
+            viewModelScope.launch {
+                restoreHistory(store)
+                // Then keep the file in sync, at most twice a second
+                _state.map { it.messages }.distinctUntilChanged().debounce(500).collect { messages ->
+                    store.save(messages.map { StoredMessage(it.author.name, it.text) })
+                }
+            }
+        }
         viewModelScope.launch {
             speaker.status.collect { status -> _state.update { it.copy(speakerStatus = status) } }
-        }
-        viewModelScope.launch {
-            speaker.voices.collect { voices -> _state.update { it.copy(voices = voices) } }
-        }
-        viewModelScope.launch {
-            speaker.currentVoice.collect { voice -> _state.update { it.copy(currentVoice = voice) } }
-        }
-        viewModelScope.launch {
-            voiceSettings.mode.collect { mode -> _state.update { it.copy(voiceMode = mode) } }
-        }
-        viewModelScope.launch {
-            voiceSettings.liveVoice.collect { voice -> _state.update { it.copy(liveVoice = voice) } }
         }
     }
 
@@ -156,27 +155,6 @@ class ChatViewModel(
         }
     }
 
-    /** Live mode with the given voice for the next conversations. */
-    fun selectLiveVoice(voiceName: String) {
-        if (_state.value.isBusy) return
-        voiceSettings.useLive(voiceName)
-    }
-
-    /** Classic mode with this TTS voice; plays a sample phrase with it. */
-    fun previewVoice(voice: TtsVoice) {
-        if (_state.value.isBusy) return
-        voiceSettings.useClassic()
-        speaker.selectVoice(voice)
-        voiceJob = viewModelScope.launch {
-            setVoice(VoiceState.Speaking(VOICE_SAMPLE))
-            try {
-                speaker.speak(VOICE_SAMPLE)
-            } finally {
-                setVoice(VoiceState.Idle)
-            }
-        }
-    }
-
     /** A spoken conversation with the Live model; transcripts of both sides appear in the chat. */
     private suspend fun runLiveSession() {
         var fallBackToClassic = false
@@ -227,6 +205,26 @@ class ChatViewModel(
             setVoice(VoiceState.Idle)
         }
         if (fallBackToClassic) runVoiceExchange()
+    }
+
+    /**
+     * Shows the chat from the previous run and gives the agent its last exchanges back,
+     * so "а що я питав учора?" and follow-ups keep working after a restart.
+     */
+    private suspend fun restoreHistory(store: ChatHistoryStore) {
+        val restored = store.load().mapNotNull { stored ->
+            val author = ChatMessage.Author.entries.firstOrNull { it.name == stored.author } ?: return@mapNotNull null
+            ChatMessage(nextId++, author, stored.text)
+        }
+        if (restored.isEmpty()) return
+        _state.update { it.copy(messages = restored + it.messages) }
+
+        // User phrase followed by the agent's answer (tool lines in between are skipped)
+        val dialog = restored.filter { it.author == ChatMessage.Author.User || it.author == ChatMessage.Author.Agent }
+        dialog.zipWithNext()
+            .filter { (q, a) -> q.author == ChatMessage.Author.User && a.author == ChatMessage.Author.Agent }
+            .takeLast(RESTORED_EXCHANGES)
+            .forEach { (q, a) -> agent.remember(q.text, a.text) }
     }
 
     /** Appends a message, or replaces the text of the one with [id]. Returns the message id. */
@@ -321,7 +319,7 @@ class ChatViewModel(
     }
 
     companion object {
-        private const val VOICE_SAMPLE = "Привіт! Я Лео. Так звучить мій голос — подобається?"
+        private const val RESTORED_EXCHANGES = 10
 
         val Factory = viewModelFactory {
             initializer {
@@ -333,6 +331,7 @@ class ChatViewModel(
                     audioFocus = container.audioFocus,
                     live = container.liveConversation,
                     voiceSettings = container.voiceSettings,
+                    history = container.chatHistory,
                 )
             }
         }

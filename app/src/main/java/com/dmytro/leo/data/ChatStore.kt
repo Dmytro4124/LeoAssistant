@@ -10,6 +10,7 @@ data class SavedChat(val messenger: Messenger, val link: String)
 interface ChatStore {
     fun all(): Map<String, SavedChat>
     fun save(name: String, chat: SavedChat)
+    fun remove(name: String)
     fun find(name: String): SavedChat? = all()[normalizeName(name)]
 
     fun promptNote(): String {
@@ -54,6 +55,10 @@ class AndroidChatStore(context: Context) : ChatStore {
         val app = Messenger.entries.firstOrNull { it.name == messenger } ?: return@mapNotNull null
         name to SavedChat(app, link)
     }.toMap()
+
+    override fun remove(name: String) {
+        prefs.edit { remove(name) }
+    }
 
     override fun save(name: String, chat: SavedChat) {
         prefs.edit { putString(ChatStore.normalizeName(name), "${chat.messenger.name}|${chat.link}") }

@@ -12,6 +12,7 @@ interface ContactAliases {
     fun all(): Map<String, String>
     /** [target] is "contact:<id>" or "phone:<number>". */
     fun save(alias: String, target: String)
+    fun remove(alias: String)
     fun find(alias: String): String? = all()[normalize(alias)]
 
     companion object {
@@ -26,6 +27,10 @@ class AndroidContactAliases(context: Context) : ContactAliases {
 
     override fun all(): Map<String, String> =
         prefs.all.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+
+    override fun remove(alias: String) {
+        prefs.edit { remove(alias) }
+    }
 
     override fun save(alias: String, target: String) {
         prefs.edit { putString(ContactAliases.normalize(alias), target) }

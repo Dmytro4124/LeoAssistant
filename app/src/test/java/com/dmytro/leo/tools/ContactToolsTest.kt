@@ -28,6 +28,7 @@ class ContactToolsTest {
         val map = mutableMapOf<String, String>()
         override fun all() = map
         override fun save(alias: String, target: String) { map[ContactAliases.normalize(alias)] = target }
+        override fun remove(alias: String) { map.remove(alias) }
     }
 
     private class FakeComm : CommActions {
@@ -50,6 +51,7 @@ class ContactToolsTest {
         val map = mutableMapOf<String, SavedChat>()
         override fun all() = map
         override fun save(name: String, chat: SavedChat) { map[ChatStore.normalizeName(name)] = chat }
+        override fun remove(name: String) { map.remove(name) }
     }
 
     private val chats = FakeChats()

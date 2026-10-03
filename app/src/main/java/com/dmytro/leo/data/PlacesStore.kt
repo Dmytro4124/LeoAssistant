@@ -7,6 +7,7 @@ import androidx.core.content.edit
 interface PlacesStore {
     fun all(): Map<String, String>
     fun save(name: String, address: String)
+    fun remove(name: String)
 
     /** The saved address for a name like "Дім", or null. */
     fun find(name: String): String? = all()[normalizeName(name)]
@@ -30,6 +31,10 @@ class AndroidPlacesStore(context: Context) : PlacesStore {
 
     override fun all(): Map<String, String> =
         prefs.all.mapNotNull { (key, value) -> (value as? String)?.let { key to it } }.toMap().toSortedMap()
+
+    override fun remove(name: String) {
+        prefs.edit { remove(name) }
+    }
 
     override fun save(name: String, address: String) {
         prefs.edit { putString(PlacesStore.normalizeName(name), address.trim()) }

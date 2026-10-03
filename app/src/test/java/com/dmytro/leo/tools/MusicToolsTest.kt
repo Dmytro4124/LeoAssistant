@@ -19,6 +19,10 @@ class MusicToolsTest {
     private class FakePlaylists : PlaylistStore {
         private val map = sortedMapOf<String, String>()
         override fun all(): Map<String, String> = map
+        override fun remove(name: String) {
+            map.remove(name)
+        }
+
         override fun save(name: String, playlistId: String) {
             map[PlaylistStore.normalizeName(name)] = playlistId
         }

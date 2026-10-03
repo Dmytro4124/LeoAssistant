@@ -69,7 +69,7 @@ fun SetupBanners() {
         }
         if (!autoSendOn && !autoSendDismissed) {
             Banner(
-                text = "Щоб Лео сам натискав «Надіслати» в Telegram і WhatsApp, увімкни «Лео: надсилання повідомлень» у спеціальних можливостях.",
+                text = "Щоб Лео сам надсилав повідомлення в месенджерах, увімкни «Лео: надсилання повідомлень» у спеціальних можливостях. Плаваючу кнопку-ярлик краще вимкнути: її торкання вимикає сервіс.",
                 action = "Увімкнути",
                 onAction = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                 onDismiss = { autoSendDismissed = true },

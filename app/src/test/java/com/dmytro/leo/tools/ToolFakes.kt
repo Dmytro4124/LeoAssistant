@@ -22,6 +22,10 @@ class FakePhone(private val available: (uri: String, packageName: String?) -> Bo
 class FakePlaces : PlacesStore {
     private val places = sortedMapOf<String, String>()
     override fun all(): Map<String, String> = places
+    override fun remove(name: String) {
+        places.remove(name)
+    }
+
     override fun save(name: String, address: String) {
         places[PlacesStore.normalizeName(name)] = address
     }

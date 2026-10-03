@@ -1,0 +1,149 @@
+package com.dmytro.leo.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.dmytro.leo.R
+import com.dmytro.leo.brain.AgentConfig
+import com.dmytro.leo.voice.VoiceMode
+import com.dmytro.leo.voice.VoiceSettings
+
+/** Voice, everything Лео remembered (with delete), permissions, and model info. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)) {
+    val state by viewModel.state.collectAsStateWithLifecycle()
+    BackHandler(onBack = onBack)
+    LifecycleResumeEffect(Unit) {
+        viewModel.refresh()
+        onPauseOrDispose { }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Налаштування") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), contentDescription = "Назад") }
+                },
+            )
+        },
+    ) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) {
+            item { SetupBanners() }
+
+            section("Голос розмови (Gemini Live)")
+            items(VoiceSettings.LIVE_VOICES, key = { "live-${it.name}" }) { voice ->
+                Choice(
+                    title = voice.name,
+                    detail = voice.description,
+                    selected = state.voiceMode == VoiceMode.Live && state.liveVoice == voice.name,
+                    onClick = { viewModel.useLive(voice.name) },
+                )
+            }
+
+            section("Класичний режим (запасний)")
+            if (state.ttsVoices.isEmpty()) item { Hint("Шукаю українські голоси…") }
+            items(state.ttsVoices, key = { "tts-${it.engine}-${it.name}" }) { voice ->
+                val current = state.currentTtsVoice
+                Choice(
+                    title = voice.label,
+                    detail = null,
+                    selected = state.voiceMode == VoiceMode.Classic &&
+                        current != null && current.engine == voice.engine && current.name == voice.name,
+                    onClick = { viewModel.useClassic(voice) },
+                )
+            }
+
+            savedSection("Місця", state.places, "Скажи: «Запам'ятай, що мій дім — …»", viewModel::removePlace)
+            savedSection("Плейлисти", state.playlists, "У YouTube Music: «Поділитися» плейлистом → Лео", viewModel::removePlaylist)
+            savedSection("Чати Instagram, Discord, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Лео", viewModel::removeChat)
+            savedSection("Як ти називаєш людей", state.contactAliases, "Скажи: «Запам'ятай, що мама — це …»", viewModel::removeAlias)
+
+            section("Про Лео")
+            item {
+                Hint("Текстовий чат: ${AgentConfig.MODEL}\nГолосова розмова: ${AgentConfig.LIVE_MODEL}")
+            }
+        }
+    }
+}
+
+private fun LazyListScope.section(title: String) {
+    item(key = "section-$title") {
+        Text(
+            title,
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 4.dp),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+private fun LazyListScope.savedSection(title: String, items: List<SavedItem>, howTo: String, onRemove: (String) -> Unit) {
+    section(title)
+    if (items.isEmpty()) {
+        item(key = "empty-$title") { Hint("Поки нічого. $howTo") }
+    }
+    items(items, key = { "$title-${it.name}" }) { item ->
+        ListItem(
+            headlineContent = { Text(item.name) },
+            supportingContent = { Text(item.detail) },
+            trailingContent = {
+                IconButton(onClick = { onRemove(item.name) }) {
+                    Icon(painterResource(R.drawable.ic_delete), contentDescription = "Видалити «${item.name}»")
+                }
+            },
+        )
+    }
+    item(key = "divider-$title") { HorizontalDivider(Modifier.padding(top = 8.dp)) }
+}
+
+@Composable
+private fun Choice(title: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        ListItem(
+            headlineContent = { Text(title) },
+            supportingContent = detail?.let { { Text(it) } },
+        )
+    }
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(
+        text,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
