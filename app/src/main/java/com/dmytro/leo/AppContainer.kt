@@ -9,6 +9,8 @@ import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.GeminiApi
 import com.dmytro.leo.brain.GeminiClient
 import com.dmytro.leo.brain.live.LiveClient
+import com.dmytro.leo.data.AboutMeStore
+import com.dmytro.leo.data.AndroidAboutMeStore
 import com.dmytro.leo.data.AndroidChatStore
 import com.dmytro.leo.data.ChatHistoryStore
 import com.dmytro.leo.data.ChatStore
@@ -26,7 +28,10 @@ import com.dmytro.leo.data.PlacesStore
 import com.dmytro.leo.data.PlaylistStore
 import com.dmytro.leo.data.YouTubeMusicSearch
 import com.dmytro.leo.tools.AccessibilityAutoSender
+import com.dmytro.leo.tools.AccessibilityScreenAgent
 import com.dmytro.leo.tools.AndroidCommActions
+import com.dmytro.leo.voice.AudioHandoff
+import com.dmytro.leo.tools.EndConversationTool
 import com.dmytro.leo.tools.AndroidMediaActions
 import com.dmytro.leo.tools.AndroidPhoneActions
 import com.dmytro.leo.tools.CallTool
@@ -49,6 +54,12 @@ import com.dmytro.leo.tools.SendMessageTool
 import com.dmytro.leo.tools.SendSmsTool
 import com.dmytro.leo.tools.SetVolumeTool
 import com.dmytro.leo.tools.ToolRegistry
+import com.dmytro.leo.tools.UiBackTool
+import com.dmytro.leo.tools.UiClickTool
+import com.dmytro.leo.tools.UiReadScreenTool
+import com.dmytro.leo.tools.UiScrollTool
+import com.dmytro.leo.tools.UiStepLimiter
+import com.dmytro.leo.tools.UiTypeTool
 import com.dmytro.leo.tools.UserTurns
 import com.dmytro.leo.tools.WeatherTool
 import com.dmytro.leo.tools.WikipediaTool
@@ -63,6 +74,7 @@ import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeechInput
 import com.dmytro.leo.voice.SpeechOutput
 import com.dmytro.leo.voice.VoiceSettings
+import com.dmytro.leo.wake.WakeModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -90,6 +102,7 @@ class AppContainer(context: Context) {
 
     val places: PlacesStore = AndroidPlacesStore(appContext)
     val playlists: PlaylistStore = AndroidPlaylistStore(appContext)
+    val aboutMe: AboutMeStore = AndroidAboutMeStore(appContext)
     private val installedApps = AndroidInstalledApps(appContext)
     private val media: MediaActions = AndroidMediaActions(appContext)
     private val phone: PhoneActions = AndroidPhoneActions(appContext)
@@ -99,9 +112,13 @@ class AppContainer(context: Context) {
     val chats: ChatStore = AndroidChatStore(appContext)
     private val web = OkHttpGet(httpClient)
     private val ownNumber = AndroidOwnNumber(appContext)
-    private val comm = AndroidCommActions(appContext)
+    /** Calls wait until a voice session has released the audio. */
+    private val audioHandoff = AudioHandoff()
+    private val comm = AndroidCommActions(appContext, audioHandoff)
     private val userTurns = UserTurns()
     private val confirmations = ConfirmationGate(userTurns)
+    private val screenAgent = AccessibilityScreenAgent()
+    private val uiSteps = UiStepLimiter(userTurns)
 
     val tools = ToolRegistry(
         listOf(
@@ -123,13 +140,19 @@ class AppContainer(context: Context) {
             ExchangeRateTool(web),
             NewsTool(web),
             WikipediaTool(web),
+            UiReadScreenTool(screenAgent, uiSteps),
+            UiClickTool(screenAgent, uiSteps, confirmations),
+            UiTypeTool(screenAgent, uiSteps),
+            UiScrollTool(screenAgent, uiSteps),
+            UiBackTool(screenAgent, uiSteps),
+            EndConversationTool(),
         )
     )
 
     val agentLoop = AgentLoop(
         gemini,
         tools,
-        promptNotes = { listOf(places.promptNote(), playlists.promptNote(), chats.promptNote()).filter { it.isNotEmpty() }.joinToString("\n\n") },
+        promptNotes = { listOf(aboutMe.promptNote(), places.promptNote(), playlists.promptNote(), chats.promptNote()).filter { it.isNotEmpty() }.joinToString("\n\n") },
         userTurns = userTurns,
     )
 
@@ -150,6 +173,8 @@ class AppContainer(context: Context) {
 
     val chatLog = ChatLog(agentLoop, chatHistory, appScope)
 
+    val wakeModel = WakeModel(appContext, httpClient)
+
     val voiceSession = VoiceSession(
         agent = agentLoop,
         chatLog = chatLog,
@@ -160,5 +185,6 @@ class AppContainer(context: Context) {
         voiceSettings = voiceSettings,
         scope = appScope,
         foreground = ServiceForegroundKeeper(appContext),
+        audioHandoff = audioHandoff,
     )
 }

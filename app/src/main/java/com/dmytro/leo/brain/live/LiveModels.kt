@@ -42,7 +42,11 @@ data class LiveGenerationConfig(
 )
 
 @Serializable
-data class SpeechConfig(val voiceConfig: VoiceConfig)
+data class SpeechConfig(
+    val voiceConfig: VoiceConfig,
+    /** Fixes the conversation language, so a short or unclear phrase isn't taken for another language. */
+    val languageCode: String? = null,
+)
 
 @Serializable
 data class VoiceConfig(val prebuiltVoiceConfig: PrebuiltVoiceConfig)
@@ -69,6 +73,8 @@ data class LiveClientContent(
 
 @Serializable
 data class LiveRealtimeInput(
+    /** A typed (or already recognized) phrase from the user, e.g. the wake phrase. */
+    val text: String? = null,
     val audio: Blob? = null,
 )
 

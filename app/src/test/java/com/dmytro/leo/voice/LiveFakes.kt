@@ -21,6 +21,7 @@ class FakeLiveConnection : LiveConnection {
     val history = mutableListOf<Content>()
     var audioChunksSent = 0
     val toolResponses = mutableListOf<FunctionResponse>()
+    val texts = mutableListOf<String>()
     var closed = false
 
     fun push(vararg events: LiveEvent) = events.forEach { channel.trySend(it) }
@@ -41,6 +42,10 @@ class FakeLiveConnection : LiveConnection {
 
     override fun sendToolResponse(responses: List<FunctionResponse>) {
         toolResponses += responses
+    }
+
+    override fun sendText(text: String) {
+        texts += text
     }
 
     override fun close() {

@@ -34,7 +34,8 @@ class ContactToolsTest {
     private class FakeComm : CommActions {
         val calls = mutableListOf<String>()
         val sms = mutableListOf<Pair<String, String>>()
-        override fun call(number: String) = calls.add(number)
+        var speaker: Boolean? = null
+        override fun call(number: String, speaker: Boolean): Boolean { this.speaker = speaker; return calls.add(number) }
         override fun sendSms(number: String, text: String) = sms.add(number to text)
     }
 
@@ -104,6 +105,31 @@ class ContactToolsTest {
 
         assertTrue(done is ToolResult.Success)
         assertEquals(listOf("067 111-22-33"), comm.calls)
+        assertEquals("loudspeaker only when asked for", false, comm.speaker)
+    }
+
+    @Test
+    fun `call on the loudspeaker when asked`() = runTest {
+        val ask = call().execute(args("contact_id" to "1", "speaker" to "true")) as ToolResult.NeedsConfirmation
+        turns.next()
+        val done = call().execute(args("contact_id" to "1", "speaker" to "true", "confirmation" to ask.token)) as ToolResult.Success
+
+        assertEquals(true, comm.speaker)
+        assertTrue(done.message.contains("гучному"))
+    }
+
+    @Test
+    fun `a call waits until the voice session releases the audio`() {
+        val handoff = com.dmytro.leo.voice.AudioHandoff()
+        val placed = mutableListOf<String>()
+        handoff.runWhenFree { placed += "before" }
+        handoff.acquire()
+        handoff.runWhenFree { placed += "during" }
+        assertEquals(listOf("before"), placed)
+        handoff.release()
+        assertEquals(listOf("before", "during"), placed)
+        handoff.release()
+        assertEquals("runs once", listOf("before", "during"), placed)
     }
 
     @Test
@@ -173,6 +199,7 @@ class ContactToolsTest {
         val done = message().execute(args("app" to "instagram", "chat" to "лера", "text" to "Привіт", "confirmation" to ask.token))
 
         assertTrue(done is ToolResult.Success)
+        assertFalse("the conversation goes on after a sent message", (done as ToolResult.Success).endsConversation)
         assertEquals("https://ig.me/m/lera.k" to "com.instagram.android", phone.openedUris.single())
         assertEquals(listOf("com.instagram.android" to "Привіт"), sentBy)
     }

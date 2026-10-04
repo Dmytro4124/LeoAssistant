@@ -98,10 +98,12 @@ private fun Banner(text: String, action: String, onAction: () -> Unit, onDismiss
 private fun Context.missingPermissions(): List<String> =
     COMM_PERMISSIONS.filter { ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED }
 
-/** Turned on in Settings → Accessibility (the service may not be bound yet right after). */
-private fun Context.isAutoSendEnabled(): Boolean {
-    if (AutoSendService.instance != null) return true
+private fun Context.isAutoSendEnabled(): Boolean =
+    AutoSendService.instance != null || isAccessibilityServiceOn(AutoSendService::class.java)
+
+/** Turned on in Settings → Accessibility (it may not be bound yet right after). */
+fun Context.isAccessibilityServiceOn(service: Class<*>): Boolean {
     val enabled = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
-    val me = ComponentName(this, AutoSendService::class.java)
+    val me = ComponentName(this, service)
     return enabled.split(':').any { ComponentName.unflattenFromString(it) == me }
 }

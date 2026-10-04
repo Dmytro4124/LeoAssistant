@@ -72,6 +72,25 @@
             </intent-filter>
         </activity>
 
+        <service
+            android:name=".accessibility.UiAgentService"
+            android:exported="false"
+            android:label="@string/ui_agent_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/ui_agent_service" />
+        </service>
+
+        <!-- Waits offline for "Привіт, Лео" -->
+        <service
+            android:name=".wake.WakeWordService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+
         <!-- Quick assistant panel over other apps (widget, Quick Settings tile) -->
         <activity
             android:name=".assistant.AssistantActivity"

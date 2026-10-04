@@ -137,7 +137,8 @@ class AndroidPcmPlayer(context: Context) : PcmPlayer {
             @Suppress("DEPRECATION")
             audioManager.isSpeakerphoneOn = false
         }
-        audioManager.mode = AudioManager.MODE_NORMAL
+        // A phone call placed by Leo may already own the audio (and its loudspeaker): leave it alone
+        if (audioManager.mode == AudioManager.MODE_IN_COMMUNICATION) audioManager.mode = AudioManager.MODE_NORMAL
     }
 
     private companion object {

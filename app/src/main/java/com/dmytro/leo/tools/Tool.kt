@@ -25,7 +25,7 @@ interface Tool {
 sealed interface ToolResult {
     /**
      * [endsConversation]: the action takes over the sound or the user's attention (music, navigation,
-     * a call, a sent message), so a voice session ends once the agent has confirmed it. Just opening
+     * a call), so a voice session ends once the agent has confirmed it. Just opening
      * an app does not end it: the conversation goes on over the other app ("відкрий телеграм" → "напиши…").
      */
     data class Success(val message: String, val endsConversation: Boolean = false) : ToolResult

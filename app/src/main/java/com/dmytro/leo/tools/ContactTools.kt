@@ -130,7 +130,11 @@ class CallTool(
 
     override val name = "call"
     override val description = "Подзвонити. Спершу знайди людину через find_contact. Дзвінок відбудеться лише після підтвердження користувача."
-    override val parameters = objectSchema(*RECIPIENT_PARAMS, CONFIRMATION_PARAM)
+    override val parameters = objectSchema(
+        *RECIPIENT_PARAMS,
+        Param("speaker", "«true», лише якщо користувач попросив гучний зв'язок / гучномовець / динамік", required = false, enum = listOf("true", "false")),
+        CONFIRMATION_PARAM,
+    )
 
     override suspend fun execute(args: JsonObject): ToolResult {
         val to = recipients.resolve(args).getOrElse { return ToolResult.Failure(it.message.orEmpty()) }
@@ -138,7 +142,10 @@ class CallTool(
         if (!gate.confirm(args.string("confirmation"), key)) {
             return ToolResult.NeedsConfirmation("Подзвонити: ${to.name} (${PhoneNumbers.masked(to.number)})?", gate.ask(key))
         }
-        return if (comm.call(to.number)) ToolResult.Success("Дзвоню: ${to.name}", endsConversation = true)
+        val speaker = args.string("speaker") == "true"
+        return if (comm.call(to.number, speaker)) {
+            ToolResult.Success("Дзвоню: ${to.name}" + if (speaker) ", на гучному зв'язку" else "", endsConversation = true)
+        }
         else ToolResult.Failure("Немає дозволу на дзвінки. Попроси користувача натиснути «Надати» на банері дозволів у Лео.")
     }
 }
@@ -233,7 +240,7 @@ class SendMessageTool(
             return ToolResult.Failure("Не вдалося відкрити ${messenger.name}. Він встановлений?")
         }
         return when (autoSender.send(messenger.packageName, text)) {
-            AutoSendResult.Sent -> ToolResult.Success("Надіслано в ${messenger.name}: $who", endsConversation = true)
+            AutoSendResult.Sent -> ToolResult.Success("Надіслано в ${messenger.name}: $who")
             // Not sent: the messenger may have ignored the text, so don't claim it is in the field
             AutoSendResult.NotEnabled -> ToolResult.Failure(
                 "НЕ надіслано: автонадсилання вимкнене в спеціальних можливостях. Чат відкрито, " +

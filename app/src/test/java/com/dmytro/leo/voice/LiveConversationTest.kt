@@ -30,7 +30,7 @@ class LiveConversationTest {
     private val updates = mutableListOf<Update>()
 
     private fun TestScope.conversation() =
-        LiveConversation(api, mic, player, idleTimeoutMs = 15_000, now = { testScheduler.currentTime })
+        LiveConversation(api, mic, player, now = { testScheduler.currentTime })
 
     private fun TestScope.start(history: List<Content> = emptyList()) =
         launch { conversation().run(session(history)) { updates += it } }
@@ -77,6 +77,23 @@ class LiveConversationTest {
     }
 
     @Test
+    fun `the wake phrase is sent first and shown as the user's turn`() = runTest {
+        val job = launch {
+            conversation().run(session().let {
+                LiveConversation.Session(it.voiceName, it.systemPrompt, it.history, it.tools, it.runTool, openingPhrase = "Привіт, Лео!")
+            }) { updates += it }
+        }
+        server.push(LiveEvent.Ready)
+        runCurrent()
+        assertEquals(listOf("Привіт, Лео!"), server.texts)
+
+        server.push(LiveEvent.Audio(ByteArray(4)), LiveEvent.OutputTranscript("Привіт! Чим допомогти?"), LiveEvent.TurnComplete)
+        runCurrent()
+        assertEquals(Update.TurnFinished("Привіт, Лео!", "Привіт! Чим допомогти?"), updates.last { it is Update.TurnFinished })
+        job.cancel()
+    }
+
+    @Test
     fun `talking over the model stops playback`() = runTest {
         val job = start()
         server.push(LiveEvent.Ready, LiveEvent.Audio(ByteArray(10)), LiveEvent.Interrupted)
@@ -96,18 +113,47 @@ class LiveConversationTest {
     }
 
     @Test
-    fun `silence ends the session`() = runTest {
+    fun `silence does not end the session`() = runTest {
         val job = start()
         server.push(LiveEvent.Ready)
         runCurrent()
 
-        advanceTimeBy(14_000)
-        assertFalse(server.closed)
-
-        advanceTimeBy(2_000)
+        advanceTimeBy(10 * 60_000)
         runCurrent()
-        assertTrue(server.closed)
+        assertFalse(server.closed)
+        assertFalse(job.isCompleted)
+        job.cancel()
+    }
+
+    @Test
+    fun `saying goodbye ends the session after the farewell`() = runTest {
+        var end: LiveConversation.End? = null
+        val job = launch {
+            end = conversation().run(session().let {
+                LiveConversation.Session(
+                    it.voiceName, it.systemPrompt, it.history, it.tools,
+                    runTool = { _, _ -> com.dmytro.leo.tools.EndConversationTool().execute(buildJsonObject {}) },
+                )
+            }) { updates += it }
+        }
+        server.push(LiveEvent.Ready, LiveEvent.InputTranscript("Все, дякую"), LiveEvent.ToolCall(listOf(FunctionCall("end_conversation"))))
+        runCurrent()
+        assertFalse("not before the goodbye is spoken", server.closed)
+
+        server.push(LiveEvent.Audio(ByteArray(10)), LiveEvent.OutputTranscript("Бувай!"), LiveEvent.TurnComplete)
+        advanceTimeBy(300)
+        runCurrent()
         assertTrue(job.isCompleted)
+        assertEquals(LiveConversation.End.Finished, end)
+    }
+
+    @Test
+    fun `a session dropped by the server can be resumed`() = runTest {
+        var end: LiveConversation.End? = null
+        launch { end = conversation().run(session()) { updates += it } }
+        server.push(LiveEvent.Ready, LiveEvent.GoAway)
+        runCurrent()
+        assertEquals(LiveConversation.End.Dropped, end)
     }
 
     @Test

@@ -43,6 +43,8 @@ interface LiveConnection {
     /** 16 kHz, 16-bit, mono PCM. */
     fun sendAudio(pcm: ByteArray)
     fun sendToolResponse(responses: List<FunctionResponse>)
+    /** A user phrase as text (the model answers it like speech). */
+    fun sendText(text: String)
     fun close()
 }
 
@@ -116,7 +118,11 @@ class LiveClient(
 
             override fun sendAudio(pcm: ByteArray) {
                 val data = Base64.getEncoder().encodeToString(pcm)
-                socket.send(GeminiJson.encodeToString(LiveClientMessage(realtimeInput = LiveRealtimeInput(Blob(MIC_MIME, data)))))
+                socket.send(GeminiJson.encodeToString(LiveClientMessage(realtimeInput = LiveRealtimeInput(audio = Blob(MIC_MIME, data)))))
+            }
+
+            override fun sendText(text: String) {
+                socket.send(GeminiJson.encodeToString(LiveClientMessage(realtimeInput = LiveRealtimeInput(text = text))))
             }
 
             override fun sendToolResponse(responses: List<FunctionResponse>) {
@@ -136,6 +142,7 @@ class LiveClient(
         override fun sendHistory(turns: List<Content>) = Unit
         override fun sendAudio(pcm: ByteArray) = Unit
         override fun sendToolResponse(responses: List<FunctionResponse>) = Unit
+        override fun sendText(text: String) = Unit
         override fun close() = Unit
     }
 

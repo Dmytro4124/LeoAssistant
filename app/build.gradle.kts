@@ -26,6 +26,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // Only for 64-bit ARM phones (Pixel 8): Vosk ships native code for every CPU type otherwise
+        ndk { abiFilters += "arm64-v8a" }
+
         buildConfigField("String", "GEMINI_API_KEY", "\"${localProps.getProperty("GEMINI_API_KEY", "")}\"")
     }
 
@@ -55,6 +58,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
+    // Offline wake phrase ("Привіт, Лео"); the Ukrainian model is downloaded on first use
+    implementation(libs.vosk.android)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)

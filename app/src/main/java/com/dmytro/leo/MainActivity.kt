@@ -15,6 +15,7 @@ import com.dmytro.leo.ui.ChatScreen
 import com.dmytro.leo.ui.ChatViewModel
 import com.dmytro.leo.ui.SettingsScreen
 import com.dmytro.leo.ui.theme.LeoTheme
+import com.dmytro.leo.wake.WakeWordService
 
 class MainActivity : ComponentActivity() {
 
@@ -35,6 +36,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Android lets us start listening for "Привіт, Лео" only while our screen is visible
+        WakeWordService.startIfEnabled(this)
     }
 
     override fun onNewIntent(intent: Intent) {

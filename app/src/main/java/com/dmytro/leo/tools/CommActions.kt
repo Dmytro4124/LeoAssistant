@@ -1,18 +1,22 @@
 package com.dmytro.leo.tools
 
+import android.Manifest
 import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Bundle
+import android.telecom.TelecomManager
 import android.telephony.SmsManager
 import com.dmytro.leo.accessibility.AutoSendService
+import com.dmytro.leo.voice.AudioHandoff
 
 /** Calls and SMS. Tests use a fake. */
 interface CommActions {
-    /** Starts a call right away (ACTION_CALL). False without CALL_PHONE. */
-    fun call(number: String): Boolean
+    /** Starts a call ([speaker]: on the loudspeaker). False without CALL_PHONE. */
+    fun call(number: String, speaker: Boolean = false): Boolean
     /** Sends an SMS in the background. False without SEND_SMS. */
     fun sendSms(number: String, text: String): Boolean
 }
@@ -24,17 +28,24 @@ fun interface AutoSender {
     suspend fun send(packageName: String, text: String): AutoSendResult
 }
 
-class AndroidCommActions(context: Context) : CommActions {
+class AndroidCommActions(context: Context, private val audio: AudioHandoff) : CommActions {
 
     private val appContext = context.applicationContext
 
-    override fun call(number: String): Boolean = try {
-        appContext.startActivity(
-            Intent(Intent.ACTION_CALL, Uri.fromParts("tel", number, null)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        true
-    } catch (e: SecurityException) {
-        false
+    /** During a voice session the call is placed once Leo has said "Дзвоню" and released the audio. */
+    @SuppressLint("MissingPermission")
+    override fun call(number: String, speaker: Boolean): Boolean {
+        if (appContext.checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) return false
+        audio.runWhenFree {
+            try {
+                val extras = Bundle().apply { putBoolean(TelecomManager.EXTRA_START_CALL_WITH_SPEAKERPHONE, speaker) }
+                appContext.getSystemService(TelecomManager::class.java)
+                    .placeCall(Uri.fromParts("tel", number, null), extras)
+            } catch (e: SecurityException) {
+                // Permission revoked in between: nothing to do
+            }
+        }
+        return true
     }
 
     @SuppressLint("MissingPermission")

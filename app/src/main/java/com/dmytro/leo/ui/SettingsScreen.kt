@@ -1,7 +1,11 @@
 package com.dmytro.leo.ui
 
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,14 +18,25 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,9 +46,12 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.dmytro.leo.R
+import com.dmytro.leo.accessibility.UiAgentService
 import com.dmytro.leo.brain.AgentConfig
+import com.dmytro.leo.data.AboutMeStore
 import com.dmytro.leo.voice.VoiceMode
 import com.dmytro.leo.voice.VoiceSettings
+import com.dmytro.leo.wake.WakeSensitivity
 
 /** Voice, everything Лео remembered (with delete), permissions, and model info. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,9 +59,11 @@ import com.dmytro.leo.voice.VoiceSettings
 fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var uiAgentOn by remember { mutableStateOf(context.isAccessibilityServiceOn(UiAgentService::class.java)) }
     BackHandler(onBack = onBack)
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
+        uiAgentOn = context.isAccessibilityServiceOn(UiAgentService::class.java)
         onPauseOrDispose { }
     }
 
@@ -59,6 +79,14 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) {
             item { SetupBanners() }
+
+            section("Про мене")
+            item(key = "about-me") { AboutMeEditor(saved = state.aboutMe, onSave = viewModel::saveAboutMe) }
+
+            section("Пробудження голосом")
+            item(key = "wake") {
+                WakeSwitch(state.wake, state.wakeSensitivity, onToggle = viewModel::setWake, onSensitivity = viewModel::setWakeSensitivity)
+            }
 
             section("Голос розмови (Gemini Live)")
             items(VoiceSettings.LIVE_VOICES, key = { "live-${it.name}" }) { voice ->
@@ -87,6 +115,20 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
             savedSection("Плейлисти", state.playlists, "У YouTube Music: «Поділитися» плейлистом → Лео", viewModel::removePlaylist)
             savedSection("Чати Instagram, Discord, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Лео", viewModel::removeChat)
             savedSection("Як ти називаєш людей", state.contactAliases, "Скажи: «Запам'ятай, що мама — це …»", viewModel::removeAlias)
+
+            section("Керування екраном")
+            item(key = "ui-agent") {
+                ListItem(
+                    headlineContent = { Text(if (uiAgentOn) "Лео: керування екраном — увімкнено" else "Лео: керування екраном — вимкнено") },
+                    supportingContent = {
+                        Text(
+                            "На прохання читає екран програми й натискає в ній кнопки. Банки, гаманці й паролі — заборонені; " +
+                                "незворотні дії — лише після твого «так». Прочитаний текст іде в Gemini."
+                        )
+                    },
+                    modifier = Modifier.clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                )
+            }
 
             section("Швидкий виклик")
             item(key = "widget") {
@@ -164,4 +206,78 @@ private fun Hint(text: String) {
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+}
+
+/** Free text about the user that goes into every request to the agent. */
+@Composable
+private fun AboutMeEditor(saved: String, onSave: (String) -> Unit) {
+    var text by rememberSaveable(saved) { mutableStateOf(saved) }
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = text,
+            onValueChange = { if (it.length <= AboutMeStore.MAX_LENGTH) text = it },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            maxLines = 8,
+            placeholder = {
+                Text("Напр.: Мене звати Дмитро, живу в Кам'янці-Подільському. Відповідай коротко, без офіціозу. Працюю програмістом.")
+            },
+            supportingText = { Text("${text.length} / ${AboutMeStore.MAX_LENGTH} · Лео враховує це в кожній відповіді; текст іде в Gemini.") },
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = { onSave(text) }, enabled = text.trim() != saved.trim()) { Text("Зберегти") }
+        }
+    }
+}
+
+@Composable
+private fun WakeSwitch(
+    wake: WakeUi,
+    sensitivity: WakeSensitivity,
+    onToggle: (Boolean) -> Unit,
+    onSensitivity: (WakeSensitivity) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("«Привіт, Лео» / «Хей, Лео»", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Лео постійно слухає ключову фразу офлайн: нічого не надсилається, поки ти її не скажеш. " +
+                        "Трохи витрачає батарею. Після перезавантаження телефона відкрий Лео один раз.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(
+                checked = wake == WakeUi.On || wake is WakeUi.Downloading,
+                onCheckedChange = onToggle,
+                enabled = wake !is WakeUi.Downloading,
+            )
+        }
+        when (wake) {
+            is WakeUi.Downloading -> {
+                LinearProgressIndicator(progress = { wake.progress }, modifier = Modifier.fillMaxWidth())
+                Text("Завантажую офлайн-модель української: ${(wake.progress * 100).toInt()}% (~78 МБ, один раз)", style = MaterialTheme.typography.bodySmall)
+            }
+            is WakeUi.Failed -> Text(wake.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            WakeUi.On -> {
+                Text("Чутливість мікрофона", style = MaterialTheme.typography.bodyMedium)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    WakeSensitivity.entries.forEachIndexed { i, level ->
+                        SegmentedButton(
+                            selected = level == sensitivity,
+                            onClick = { onSensitivity(level) },
+                            shape = SegmentedButtonDefaults.itemShape(i, WakeSensitivity.entries.size),
+                        ) { Text(level.label) }
+                    }
+                }
+                Text(
+                    "Висока чує здалеку, але частіше прокидається від сторонньої розмови.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            else -> Unit
+        }
+    }
 }

@@ -28,15 +28,18 @@ import kotlin.math.sqrt
 /**
  * One spoken conversation with the Live model: the microphone streams to Gemini, its
  * voice streams to the speaker, and both sides arrive as text transcripts for the chat.
- * The session ends when [run]'s caller is cancelled, or after [idleTimeoutMs] of silence.
+ * Silence does not end it: only cancelling [run]'s caller (the stop button), or an action
+ * that ends the conversation by itself (music, navigation, a call, "бувай" → end_conversation).
  */
 class LiveConversation(
     private val live: LiveApi,
     private val mic: MicStream,
     private val player: PcmPlayer,
-    private val idleTimeoutMs: Long = 15_000,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
+
+    /** How [run] ended. [Dropped]: the server closed a working session (time limit) — reconnect to go on. */
+    enum class End { Finished, Dropped }
 
     sealed interface Update {
         /** The model is listening; [level] is the microphone loudness in dB (about -2..10). */
@@ -62,9 +65,12 @@ class LiveConversation(
         val runTool: suspend (name: String, args: JsonObject) -> ToolResult,
         /** Called when the user starts a new phrase (counts as an answer to a confirmation). */
         val onUserTurn: () -> Unit = {},
+        /** Said by the user before the session opened (the wake phrase): sent right away, so the
+         *  model starts in Ukrainian and is ready, instead of waiting in silence. */
+        val openingPhrase: String? = null,
     )
 
-    suspend fun run(session: Session, onUpdate: (Update) -> Unit) = coroutineScope {
+    suspend fun run(session: Session, onUpdate: (Update) -> Unit): End = coroutineScope {
         val connection = live.connect(setup(session))
         player.start()
 
@@ -73,6 +79,8 @@ class LiveConversation(
         var ready = false
         var lastActivity = now()
         var micJob: Job? = null
+        var closedByUs = false
+        var failed = false
 
         // After music or navigation starts, the session ends once the model has confirmed it
         var endAfterAction = false
@@ -87,7 +95,7 @@ class LiveConversation(
             agentText.clear()
         }
 
-        // Switches the UI back to "listening" when playback ends, and ends a silent session
+        // Switches the UI back to "listening" when playback ends, and ends the session after an action
         val watchdog = launch {
             var wasSpeaking = false
             while (isActive) {
@@ -98,7 +106,8 @@ class LiveConversation(
                 wasSpeaking = speaking
                 val actionDone = endAfterAction && !speaking &&
                     ((spokeAfterAction && confirmedAfterAction) || now() - lastActivity > CONFIRM_WAIT_MS)
-                if (actionDone || (ready && !speaking && now() - lastActivity > idleTimeoutMs)) {
+                if (actionDone) {
+                    closedByUs = true
                     connection.close()
                     break
                 }
@@ -112,6 +121,11 @@ class LiveConversation(
                         ready = true
                         lastActivity = now()
                         connection.sendHistory(session.history)
+                        session.openingPhrase?.let { phrase ->
+                            userText.append(phrase)
+                            onUpdate(Update.UserTranscript(phrase))
+                            connection.sendText(phrase)
+                        }
                         onUpdate(Update.Listening(0f))
                         micJob = launch {
                             mic.stream().collect { chunk ->
@@ -159,12 +173,16 @@ class LiveConversation(
                     }
                     LiveEvent.GoAway -> connection.close()
                     is LiveEvent.Closed -> {
-                        event.error?.let { onUpdate(Update.Failed(it, beforeReady = !ready)) }
+                        event.error?.let {
+                            failed = true
+                            onUpdate(Update.Failed(it, beforeReady = !ready))
+                        }
                     }
                 }
             }
             // Let the last answer finish playing before closing the speaker
             while (player.isSpeaking) delay(100)
+            if (ready && !closedByUs && !failed) End.Dropped else End.Finished
         } finally {
             finishTurn()
             micJob?.cancel()
@@ -177,7 +195,7 @@ class LiveConversation(
     private fun setup(session: Session) = LiveSetup(
         model = "models/${AgentConfig.LIVE_MODEL}",
         generationConfig = LiveGenerationConfig(
-            speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(session.voiceName))),
+            speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(session.voiceName)), languageCode = "uk-UA"),
         ),
         systemInstruction = Content.system(session.systemPrompt),
         tools = session.tools.ifEmpty { null },

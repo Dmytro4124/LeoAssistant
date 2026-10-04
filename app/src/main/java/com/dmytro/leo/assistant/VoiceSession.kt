@@ -5,6 +5,7 @@ import com.dmytro.leo.brain.AgentReply
 import com.dmytro.leo.brain.GeminiError
 import com.dmytro.leo.brain.toUserMessage
 import com.dmytro.leo.voice.AudioFocus
+import com.dmytro.leo.voice.AudioHandoff
 import com.dmytro.leo.voice.LiveConversation
 import com.dmytro.leo.voice.SpeechError
 import com.dmytro.leo.voice.SpeechEvent
@@ -55,6 +56,7 @@ class VoiceSession(
     private val voiceSettings: VoiceSettings,
     private val scope: CoroutineScope,
     private val foreground: ForegroundKeeper = ForegroundKeeper.None,
+    private val audioHandoff: AudioHandoff = AudioHandoff(),
 ) {
     private val _state = MutableStateFlow<VoiceState>(VoiceState.Idle)
     val state: StateFlow<VoiceState> = _state.asStateFlow()
@@ -68,17 +70,21 @@ class VoiceSession(
     val isActive: Boolean get() = job?.isActive == true
 
     /** Must be called while one of our screens is visible (Android lets only those start the mic service). */
-    fun start() {
+    /** [openingPhrase]: what the user already said to start it (the wake phrase), sent to the model first. */
+    fun start(openingPhrase: String? = null) {
         if (isActive) return
         _hint.value = null
         foreground.start()
+        audioHandoff.acquire()
         job = scope.launch {
             try {
                 when (voiceSettings.mode.value) {
-                    VoiceMode.Live -> runLive()
+                    VoiceMode.Live -> runLive(openingPhrase)
                     VoiceMode.Classic -> runClassic()
                 }
             } finally {
+                // Speaker and mic are released by now: a confirmed call can start
+                audioHandoff.release()
                 _state.value = VoiceState.Idle
                 foreground.stop()
             }
@@ -97,7 +103,7 @@ class VoiceSession(
     }
 
     /** A spoken conversation with the Live model; transcripts of both sides appear in the chat. */
-    private suspend fun runLive() {
+    private suspend fun runLive(openingPhrase: String?) {
         var fallBackToClassic = false
         audioFocus.acquire()
         try {
@@ -105,42 +111,49 @@ class VoiceSession(
             var userMessageId: Long? = null
             var agentMessageId: Long? = null
 
-            val session = LiveConversation.Session(
-                voiceName = voiceSettings.liveVoice.value,
-                systemPrompt = agent.systemPrompt(),
-                history = agent.history(),
-                tools = agent.toolDeclarations,
-                runTool = agent::runTool,
-                onUserTurn = agent::noteUserTurn,
-            )
-            live.run(session) { update ->
-                when (update) {
-                    is LiveConversation.Update.Listening -> _state.value = VoiceState.Listening(level = update.level)
-                    LiveConversation.Update.Speaking ->
-                        if (_state.value !is VoiceState.Speaking) _state.value = VoiceState.Speaking("")
-                    is LiveConversation.Update.UserTranscript ->
-                        userMessageId = chatLog.upsert(userMessageId, ChatMessage.Author.User, update.text)
-                    is LiveConversation.Update.AgentTranscript ->
-                        agentMessageId = chatLog.upsert(agentMessageId, ChatMessage.Author.Agent, update.text)
-                    is LiveConversation.Update.ToolUsed -> chatLog.append(ChatMessage.Author.Tool, ChatLog.describe(update.action))
-                    is LiveConversation.Update.TurnFinished -> {
-                        // Text mode will know what was said by voice
-                        scope.launch { agent.remember(update.user, update.agent) }
-                        userMessageId = null
-                        agentMessageId = null
-                    }
-                    is LiveConversation.Update.Failed -> {
-                        val canFallBack = update.beforeReady &&
-                            update.error != GeminiError.NoNetwork && update.error != GeminiError.InvalidApiKey
-                        if (canFallBack) {
-                            fallBackToClassic = true
-                            _hint.value = "Live недоступний: ${update.error.toUserMessage()} Перемикаюсь на звичайний режим."
-                        } else {
-                            chatLog.append(ChatMessage.Author.Error, update.error.toUserMessage())
+            var phrase = openingPhrase
+            // The server limits how long one connection lives; when it drops a working session,
+            // reconnect with the conversation so far — the user only ends it themselves
+            do {
+                val session = LiveConversation.Session(
+                    voiceName = voiceSettings.liveVoice.value,
+                    systemPrompt = agent.systemPrompt(),
+                    history = agent.history(),
+                    tools = agent.toolDeclarations,
+                    runTool = agent::runTool,
+                    onUserTurn = agent::noteUserTurn,
+                    openingPhrase = phrase,
+                )
+                phrase = null
+                val end = live.run(session) { update ->
+                    when (update) {
+                        is LiveConversation.Update.Listening -> _state.value = VoiceState.Listening(level = update.level)
+                        LiveConversation.Update.Speaking ->
+                            if (_state.value !is VoiceState.Speaking) _state.value = VoiceState.Speaking("")
+                        is LiveConversation.Update.UserTranscript ->
+                            userMessageId = chatLog.upsert(userMessageId, ChatMessage.Author.User, update.text)
+                        is LiveConversation.Update.AgentTranscript ->
+                            agentMessageId = chatLog.upsert(agentMessageId, ChatMessage.Author.Agent, update.text)
+                        is LiveConversation.Update.ToolUsed -> chatLog.append(ChatMessage.Author.Tool, ChatLog.describe(update.action))
+                        is LiveConversation.Update.TurnFinished -> {
+                            // Text mode (and the next connection) will know what was said by voice
+                            scope.launch { agent.remember(update.user, update.agent) }
+                            userMessageId = null
+                            agentMessageId = null
+                        }
+                        is LiveConversation.Update.Failed -> {
+                            val canFallBack = update.beforeReady &&
+                                update.error != GeminiError.NoNetwork && update.error != GeminiError.InvalidApiKey
+                            if (canFallBack) {
+                                fallBackToClassic = true
+                                _hint.value = "Live недоступний: ${update.error.toUserMessage()} Перемикаюсь на звичайний режим."
+                            } else {
+                                chatLog.append(ChatMessage.Author.Error, update.error.toUserMessage())
+                            }
                         }
                     }
                 }
-            }
+            } while (end == LiveConversation.End.Dropped)
         } finally {
             audioFocus.release()
         }
@@ -204,4 +217,9 @@ class VoiceSession(
 
     private fun updateListening(change: (VoiceState.Listening) -> VoiceState.Listening) =
         _state.update { if (it is VoiceState.Listening) change(it) else it }
+
+    companion object {
+        /** Sent first when a conversation is started by voice, so the model starts in Ukrainian. */
+        const val WAKE_GREETING = "Привіт, Лео!"
+    }
 }
