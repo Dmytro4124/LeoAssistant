@@ -92,6 +92,8 @@ class ChatLog(
     companion object {
         private const val RESTORED_EXCHANGES = 10
 
+        private const val MAX_OUTCOME = 120
+
         /** "🔧 navigate_to: Будинок культури, driving → Навігацію запущено" */
         fun describe(action: ToolAction): String {
             val args = action.args.values.joinToString { (it as? JsonPrimitive)?.content ?: it.toString() }
@@ -100,7 +102,9 @@ class ChatLog(
                 is ToolResult.Failure -> "✗ " + result.message
                 is ToolResult.NeedsConfirmation -> "❔ " + result.question
             }
-            return "🔧 ${action.name}: $args → $outcome"
+            // Screen texts and search results can be long: the chat shows only the start
+            val short = outcome.lineSequence().first().let { if (it.length > MAX_OUTCOME) it.take(MAX_OUTCOME) + "…" else it }
+            return "🔧 ${action.name}: $args → $short"
         }
     }
 }

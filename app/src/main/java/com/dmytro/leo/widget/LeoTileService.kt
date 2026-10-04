@@ -6,7 +6,7 @@ import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.dmytro.leo.assistant.AssistantActivity
 
-/** Quick Settings tile: pull down the shade, tap "Лео", talk. */
+/** Quick Settings tile: pull down the shade, tap "Leo", talk. */
 class LeoTileService : TileService() {
 
     override fun onStartListening() {

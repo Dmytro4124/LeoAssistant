@@ -11,7 +11,7 @@ import com.dmytro.leo.data.PhoneNumbers
 import kotlinx.serialization.json.JsonObject
 import java.net.URLEncoder
 
-private const val NO_CONTACTS_PERMISSION = "Немає дозволу на контакти. Попроси користувача натиснути «Надати» на банері дозволів у Лео."
+private const val NO_CONTACTS_PERMISSION = "Немає дозволу на контакти. Попроси користувача натиснути «Надати» на банері дозволів у Leo."
 
 /** Who a message or call goes to, resolved from tool arguments. */
 private data class Recipient(val name: String, val number: String, val contact: Contact?)
@@ -146,7 +146,7 @@ class CallTool(
         return if (comm.call(to.number, speaker)) {
             ToolResult.Success("Дзвоню: ${to.name}" + if (speaker) ", на гучному зв'язку" else "", endsConversation = true)
         }
-        else ToolResult.Failure("Немає дозволу на дзвінки. Попроси користувача натиснути «Надати» на банері дозволів у Лео.")
+        else ToolResult.Failure("Немає дозволу на дзвінки. Попроси користувача натиснути «Надати» на банері дозволів у Leo.")
     }
 }
 
@@ -172,7 +172,7 @@ class SendSmsTool(
             return ToolResult.NeedsConfirmation("Надіслати SMS (${to.name}): «$text»?", gate.ask(key))
         }
         return if (comm.sendSms(to.number, text)) ToolResult.Success("SMS надіслано: ${to.name}")
-        else ToolResult.Failure("Немає дозволу на SMS. Попроси користувача натиснути «Надати» на банері дозволів у Лео.")
+        else ToolResult.Failure("Немає дозволу на SMS. Попроси користувача натиснути «Надати» на банері дозволів у Leo.")
     }
 }
 
@@ -216,7 +216,7 @@ class SendMessageTool(
         // Where to: a saved chat by name, or a person by phone number
         val (who, link) = args.string("chat")?.let { chatName ->
             val chat = chats.find(chatName)
-                ?: return ToolResult.Failure("Чату «$chatName» немає серед збережених. Його можна зберегти: «Поділитися» посиланням → Лео.")
+                ?: return ToolResult.Failure("Чату «$chatName» немає серед збережених. Його можна зберегти: «Поділитися» посиланням → Leo.")
             if (chat.messenger != messenger) return ToolResult.Failure("Чат «$chatName» збережено для ${chat.messenger.name}, а не ${messenger.name}")
             chatName to chat.link
         } ?: run {
@@ -224,7 +224,7 @@ class SendMessageTool(
                 return ToolResult.Failure(
                     "Для ${messenger.name} потрібен збережений чат (параметр chat). Збережені: " +
                         chats.all().filterValues { it.messenger == messenger }.keys.ifEmpty { listOf("немає") }.joinToString() +
-                        ". Зберегти: у ${messenger.name} «Поділитися» профілем чи повідомленням → Лео."
+                        ". Зберегти: у ${messenger.name} «Поділитися» профілем чи повідомленням → Leo."
                 )
             }
             val to = recipients.resolve(args).getOrElse { return ToolResult.Failure(it.message.orEmpty()) }
@@ -259,7 +259,7 @@ class SaveChatTool(private val chats: ChatStore) : Tool {
     override val name = "save_chat"
     override val description =
         "Запам'ятати чат за посиланням, щоб потім писати туди голосом: профіль Instagram, канал чи особисті " +
-            "повідомлення Discord, група чи канал Telegram. Користувач ділиться посиланням з Лео. Якщо назви немає — спитай її."
+            "повідомлення Discord, група чи канал Telegram. Користувач ділиться посиланням з Leo. Якщо назви немає — спитай її."
     override val parameters = objectSchema(
         Param("name", "Як користувач називатиме чат: «Лера», «друзі в дискорді»"),
         Param("link", "Посилання: instagram.com/…, discord.com/channels/…, t.me/…"),

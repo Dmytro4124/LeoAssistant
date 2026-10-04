@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget in the system style: the same Material You palette as themed launcher icons (light theme) -->
+<resources>
+    <color name="widget_sys_panel">@android:color/system_accent2_50</color>
+    <color name="widget_sys_text">@android:color/system_accent1_900</color>
+    <color name="widget_sys_text_dim">@android:color/system_accent2_700</color>
+    <color name="widget_sys_accent">@android:color/system_accent1_600</color>
+    <color name="widget_sys_on_accent">@android:color/system_accent1_50</color>
+</resources>

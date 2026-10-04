@@ -1,5 +1,6 @@
 package com.dmytro.leo.ui
 
+import android.os.Build
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -30,7 +31,10 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.dmytro.leo.ui.theme.BannerBar
+import com.dmytro.leo.widget.LeoWidget
+import com.dmytro.leo.ui.theme.LionEmblem
+import com.dmytro.leo.ui.theme.SectionTitle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,7 +57,7 @@ import com.dmytro.leo.voice.VoiceMode
 import com.dmytro.leo.voice.VoiceSettings
 import com.dmytro.leo.wake.WakeSensitivity
 
-/** Voice, everything Лео remembered (with delete), permissions, and model info. */
+/** Voice, everything Leo remembered (with delete), permissions, and model info. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.Factory)) {
@@ -69,8 +73,8 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Налаштування") },
+            BannerBar(
+                title = "Налаштування",
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(painterResource(R.drawable.ic_back), contentDescription = "Назад") }
                 },
@@ -112,14 +116,14 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
             }
 
             savedSection("Місця", state.places, "Скажи: «Запам'ятай, що мій дім — …»", viewModel::removePlace)
-            savedSection("Плейлисти", state.playlists, "У YouTube Music: «Поділитися» плейлистом → Лео", viewModel::removePlaylist)
-            savedSection("Чати Instagram, Discord, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Лео", viewModel::removeChat)
+            savedSection("Плейлисти", state.playlists, "У YouTube Music: «Поділитися» плейлистом → Leo", viewModel::removePlaylist)
+            savedSection("Чати Instagram, Discord, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Leo", viewModel::removeChat)
             savedSection("Як ти називаєш людей", state.contactAliases, "Скажи: «Запам'ятай, що мама — це …»", viewModel::removeAlias)
 
             section("Керування екраном")
             item(key = "ui-agent") {
                 ListItem(
-                    headlineContent = { Text(if (uiAgentOn) "Лео: керування екраном — увімкнено" else "Лео: керування екраном — вимкнено") },
+                    headlineContent = { Text(if (uiAgentOn) "Leo: керування екраном — увімкнено" else "Leo: керування екраном — вимкнено") },
                     supportingContent = {
                         Text(
                             "На прохання читає екран програми й натискає в ній кнопки. Банки, гаманці й паролі — заборонені; " +
@@ -134,20 +138,44 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
             item(key = "widget") {
                 ListItem(
                     headlineContent = { Text("Додати віджет на головний екран") },
-                    supportingContent = { Text("Кнопка мікрофона: одразу починає розмову") },
+                    supportingContent = { Text("Почати чи зупинити розмову і перемикач «Привіт, Leo»") },
                     modifier = Modifier.clickable { context.requestLeoWidget() },
                 )
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                item(key = "widget-style") {
+                    var systemStyle by remember { mutableStateOf(LeoWidget.isSystemStyle(context)) }
+                    val toggle = { on: Boolean ->
+                        systemStyle = on
+                        LeoWidget.setSystemStyle(context, on)
+                    }
+                    ListItem(
+                        headlineContent = { Text("Віджет у стилі системи") },
+                        supportingContent = {
+                            Text(
+                                "Кольори як у тематичних іконок (Material You) замість малинового із золотом. " +
+                                    "Android не дає програмам дізнатися, чи ввімкнені тематичні іконки, тож це перемикач тут."
+                            )
+                        },
+                        trailingContent = { Switch(checked = systemStyle, onCheckedChange = toggle) },
+                        modifier = Modifier.clickable { toggle(!systemStyle) },
+                    )
+                }
             }
             item(key = "tile") {
                 ListItem(
                     headlineContent = { Text("Додати плитку у швидкі налаштування") },
-                    supportingContent = { Text("Шторка → «Лео» — з будь-якого екрана") },
+                    supportingContent = { Text("Шторка → «Leo» — з будь-якого екрана") },
                     modifier = Modifier.clickable { context.requestLeoTile() },
                 )
             }
 
-            section("Про Лео")
+            section("Про Leo")
             item {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LionEmblem(96.dp)
+                    Text("Почуй мій рик", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp))
+                }
                 Hint("Текстовий чат: ${AgentConfig.MODEL}\nГолосова розмова: ${AgentConfig.LIVE_MODEL}")
             }
         }
@@ -156,12 +184,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
 
 private fun LazyListScope.section(title: String) {
     item(key = "section-$title") {
-        Text(
-            title,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 4.dp),
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        SectionTitle(title, Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 6.dp))
     }
 }
 
@@ -222,7 +245,7 @@ private fun AboutMeEditor(saved: String, onSave: (String) -> Unit) {
             placeholder = {
                 Text("Напр.: Мене звати Дмитро, живу в Кам'янці-Подільському. Відповідай коротко, без офіціозу. Працюю програмістом.")
             },
-            supportingText = { Text("${text.length} / ${AboutMeStore.MAX_LENGTH} · Лео враховує це в кожній відповіді; текст іде в Gemini.") },
+            supportingText = { Text("${text.length} / ${AboutMeStore.MAX_LENGTH} · Leo враховує це в кожній відповіді; текст іде в Gemini.") },
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = { onSave(text) }, enabled = text.trim() != saved.trim()) { Text("Зберегти") }
@@ -240,10 +263,10 @@ private fun WakeSwitch(
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("«Привіт, Лео» / «Хей, Лео»", style = MaterialTheme.typography.bodyLarge)
+                Text("«Привіт, Leo» / «Хей, Leo»", style = MaterialTheme.typography.bodyLarge)
                 Text(
-                    "Лео постійно слухає ключову фразу офлайн: нічого не надсилається, поки ти її не скажеш. " +
-                        "Трохи витрачає батарею. Після перезавантаження телефона відкрий Лео один раз.",
+                    "Leo постійно слухає ключову фразу офлайн: нічого не надсилається, поки ти її не скажеш. " +
+                        "Трохи витрачає батарею. Після перезавантаження телефона відкрий Leo один раз.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

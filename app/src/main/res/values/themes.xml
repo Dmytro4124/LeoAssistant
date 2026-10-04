@@ -1,5 +1,10 @@
 <resources>
-    <style name="Theme.LeoVoiceAssistant" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.LeoVoiceAssistant" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Launch screen: the lion on crimson -->
+        <item name="android:windowSplashScreenBackground">@color/lion_crimson_dark</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_lion</item>
+        <item name="android:windowBackground">@color/lion_night</item>
+    </style>
 
     <!-- The assistant overlay: see-through, the panel and the dim are drawn by Compose -->
     <style name="Theme.LeoVoiceAssistant.Overlay" parent="android:Theme.Material.Light.NoActionBar">

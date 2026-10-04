@@ -29,7 +29,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The "Привіт, Лео" switch: off, on, or downloading the offline model first. */
+/** The "Привіт, Leo" switch: off, on, or downloading the offline model first. */
 sealed interface WakeUi {
     data object Off : WakeUi
     data object On : WakeUi
@@ -37,7 +37,7 @@ sealed interface WakeUi {
     data class Failed(val message: String) : WakeUi
 }
 
-/** Something the user taught Лео, shown in Settings with a delete button. */
+/** Something the user taught Leo, shown in Settings with a delete button. */
 data class SavedItem(val name: String, val detail: String)
 
 data class SettingsUiState(
@@ -163,7 +163,7 @@ class SettingsViewModel(
     fun removeAlias(name: String) = aliases.remove(name).also { refresh() }
 
     companion object {
-        private const val VOICE_SAMPLE = "Привіт! Я Лео. Так звучить мій голос."
+        private const val VOICE_SAMPLE = "Привіт! Я Leo. Так звучить мій голос."
 
         val Factory = viewModelFactory {
             initializer {

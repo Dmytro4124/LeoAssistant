@@ -9,13 +9,16 @@ import android.os.Build
 import android.speech.tts.TextToSpeech
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -40,7 +43,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,6 +59,11 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.dmytro.leo.ui.theme.BannerBar
+import com.dmytro.leo.ui.theme.GoldRule
+import com.dmytro.leo.ui.theme.LionColors
+import com.dmytro.leo.ui.theme.LionEmblem
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -76,7 +84,7 @@ fun ChatScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    // The mic, plus notifications for the "Лео слухає" notice while another app is open
+    // The mic, plus notifications for the "Leo слухає" notice while another app is open
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         val granted = result[Manifest.permission.RECORD_AUDIO] == true
         if (granted) viewModel.onMicClick() else viewModel.onMicPermissionDenied()
@@ -155,13 +163,21 @@ private fun ChatContent(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(AgentConfig.NAME) },
+            BannerBar(
+                title = AgentConfig.NAME,
+                showLion = true,
                 actions = {
                     IconButton(onClick = onOpenSettings) {
                         Icon(painterResource(R.drawable.ic_settings), contentDescription = "Налаштування")
                     }
-                    TextButton(onClick = onClear, enabled = state.messages.isNotEmpty() && !state.isBusy) {
+                    TextButton(
+                        onClick = onClear,
+                        enabled = state.messages.isNotEmpty() && !state.isBusy,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = LionColors.GoldLight,
+                            disabledContentColor = LionColors.GoldLight.copy(alpha = 0.4f),
+                        ),
+                    ) {
                         Text("Очистити")
                     }
                 },
@@ -213,9 +229,22 @@ private fun ChatContent(
         },
     ) { innerPadding ->
         if (state.messages.isEmpty() && !state.isThinking) {
-            Box(Modifier.fillMaxSize().padding(innerPadding).padding(32.dp), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.fillMaxSize().padding(innerPadding).padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                LionEmblem(140.dp)
+                Spacer(Modifier.height(16.dp))
                 Text(
-                    "Натисни мікрофон і скажи, наприклад:\n«Привіт, що ти вмієш?»",
+                    "Почуй мій рик",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    letterSpacing = 1.sp,
+                )
+                GoldRule(Modifier.padding(vertical = 12.dp).widthIn(max = 220.dp))
+                Text(
+                    "Натисни мікрофон або скажи «Привіт, Leo».\nНаприклад: «Що ти вмієш?»",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -309,11 +338,14 @@ private fun MessageBubble(message: ChatMessage) {
         ChatMessage.Author.Error -> colors.errorContainer to colors.onErrorContainer
         else -> colors.surfaceContainerHigh to colors.onSurface
     }
+    // Leo's own words get a thin gold edge, like a page of a chronicle
+    val border = if (message.author == ChatMessage.Author.Agent) BorderStroke(1.dp, LionColors.Gold.copy(alpha = 0.45f)) else null
 
     Box(Modifier.fillMaxWidth(), contentAlignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart) {
         Surface(
             color = background,
             contentColor = foreground,
+            border = border,
             shape = RoundedCornerShape(
                 topStart = 18.dp, topEnd = 18.dp,
                 bottomStart = if (isUser) 18.dp else 4.dp,
@@ -332,12 +364,12 @@ private fun MessageBubble(message: ChatMessage) {
 @Preview(showBackground = true)
 @Composable
 private fun ChatPreview() {
-    LeoTheme(dynamicColor = false) {
+    LeoTheme(darkTheme = true) {
         ChatContent(
             state = ChatUiState(
                 messages = listOf(
                     ChatMessage(0, ChatMessage.Author.User, "Привіт, що ти вмієш?"),
-                    ChatMessage(1, ChatMessage.Author.Agent, "Привіт! Я Лео. Поки що відповідаю на запитання, а скоро навчуся керувати телефоном."),
+                    ChatMessage(1, ChatMessage.Author.Agent, "Привіт! Я Leo. Поки що відповідаю на запитання, а скоро навчуся керувати телефоном."),
                 ),
                 voice = VoiceState.Listening(partial = "яка завтра погода", level = 5f),
                 speakerStatus = SpeakerStatus.MissingUkrainianVoice,

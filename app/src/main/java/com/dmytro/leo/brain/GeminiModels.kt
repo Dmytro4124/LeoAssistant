@@ -71,7 +71,12 @@ data class Part(
     val thoughtSignature: String? = null,
     val functionCall: FunctionCall? = null,
     val functionResponse: FunctionResponse? = null,
+    val inlineData: InlineData? = null,
 )
+
+/** An image (or other file) sent with a request; [data] is base64. */
+@Serializable
+data class InlineData(val mimeType: String, val data: String)
 
 @Serializable
 data class GenerationConfig(

@@ -11,6 +11,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,6 +47,7 @@ import com.dmytro.leo.LeoApp
 import com.dmytro.leo.MainActivity
 import com.dmytro.leo.ui.VoicePanel
 import com.dmytro.leo.ui.theme.LeoTheme
+import com.dmytro.leo.ui.theme.LionColors
 import kotlinx.coroutines.delay
 
 /**
@@ -130,7 +132,8 @@ private fun AssistantOverlay(onClose: () -> Unit, onOpenChat: () -> Unit) {
                 .fillMaxWidth()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
             shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-            tonalElevation = 6.dp,
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(1.dp, LionColors.Gold.copy(alpha = 0.6f)),
         ) {
             Column(
                 Modifier.navigationBarsPadding().padding(top = 16.dp, start = 20.dp, end = 20.dp),

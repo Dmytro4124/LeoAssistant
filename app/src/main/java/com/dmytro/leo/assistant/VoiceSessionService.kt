@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
 
 /**
  * Foreground service of type "microphone": while a voice conversation runs, Android keeps
- * our microphone working even when Maps or a messenger is on screen. Shows "Лео слухає"
+ * our microphone working even when Maps or a messenger is on screen. Shows "Leo слухає"
  * with a Stop button, and stops itself when the conversation ends.
  */
 class VoiceSessionService : Service() {
@@ -62,8 +62,8 @@ class VoiceSessionService : Service() {
     private fun notification(): Notification {
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Розмова з Лео", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Показується, поки Лео слухає"
+            NotificationChannel(CHANNEL_ID, "Розмова з Leo", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "Показується, поки Leo слухає"
             }
         )
         val openChat = PendingIntent.getActivity(
@@ -74,7 +74,7 @@ class VoiceSessionService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_mic)
-            .setContentTitle("Лео слухає")
+            .setContentTitle("Leo слухає")
             .setContentText("Говори — або натисни «Зупинити»")
             .setContentIntent(openChat)
             .addAction(R.drawable.ic_stop, "Зупинити", stop)

@@ -22,7 +22,7 @@ class UiToolsTest {
         val clicks = mutableListOf<Int>()
         val typed = mutableListOf<Pair<Int, String>>()
 
-        override suspend fun read() = result
+        override suspend fun read(detailed: Boolean) = result
         override suspend fun click(id: Int) = result.also { clicks += id }
         override suspend fun type(id: Int, text: String) = result.also { typed += id to text }
         override suspend fun scroll(id: Int?, forward: Boolean) = result

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- While Leo listens: a crimson button in a gold ring -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/lion_crimson_dark" />
+    <stroke
+        android:width="3dp"
+        android:color="@color/lion_gold" />
+</shape>

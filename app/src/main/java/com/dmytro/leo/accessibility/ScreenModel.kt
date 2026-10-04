@@ -134,7 +134,7 @@ object Redactor {
     }
 }
 
-/** Apps Лео must never look into or touch: banks, wallets, passwords, 2FA. */
+/** Apps Leo must never look into or touch: banks, wallets, passwords, 2FA. */
 object SensitiveApps {
     private val PACKAGES = setOf(
         "com.ftband.mono", "ua.privatbank.ap24", "ua.oschadbank.online", "com.ukrsibbank.client.android",

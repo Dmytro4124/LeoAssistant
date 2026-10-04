@@ -2,7 +2,7 @@ package com.dmytro.leo.wake
 
 import kotlin.math.roundToInt
 
-/** How far away "Привіт, Лео" is heard: higher hears from farther, but wakes up more by mistake. */
+/** How far away "Привіт, Leo" is heard: higher hears from farther, but wakes up more by mistake. */
 enum class WakeSensitivity(val label: String, val gain: Float) {
     Low("Низька", 1f),
     Medium("Середня", 2.5f),

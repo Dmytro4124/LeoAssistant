@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crimson banner with a thin gold edge -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:endColor="@color/lion_crimson"
+        android:startColor="@color/lion_crimson_dark" />
+    <corners android:radius="28dp" />
+    <stroke
+        android:width="1.5dp"
+        android:color="#B3D9A93F" />
+</shape>

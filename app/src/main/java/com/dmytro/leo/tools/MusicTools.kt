@@ -58,7 +58,7 @@ class PlayMusicTool(
         val what = listOf(item.title, item.subtitle).filter { it.isNotEmpty() }.joinToString(" — ")
         // Not one of the user's playlists: say so, or they would think it is theirs
         val note = if (type == MusicType.Playlist) {
-            "Збереженого плейлиста «$query» немає (його можна зберегти: «Поділитися» → Лео), тому вмикаю знайдений публічний: "
+            "Збереженого плейлиста «$query» немає (його можна зберегти: «Поділитися» → Leo), тому вмикаю знайдений публічний: "
         } else ""
         return play(item.linkFor(type)!!, note + what)
     }

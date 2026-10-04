@@ -22,6 +22,7 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.dmytro.leo.LeoApp
+import com.dmytro.leo.widget.LeoWidget
 import com.dmytro.leo.MainActivity
 import com.dmytro.leo.R
 import com.dmytro.leo.assistant.VoiceSession
@@ -41,7 +42,7 @@ import org.vosk.Model
 import org.vosk.Recognizer
 
 /**
- * Listens for "Привіт, Лео" all the time, fully offline (Vosk), and starts a voice
+ * Listens for "Привіт, Leo" all the time, fully offline (Vosk), and starts a voice
  * conversation when it hears it. Pauses while a conversation runs. Nothing leaves the
  * phone until the wake phrase is heard.
  */
@@ -61,7 +62,7 @@ class WakeWordService : Service() {
         try {
             ServiceCompat.startForeground(this, NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         } catch (e: RuntimeException) {
-            // Not allowed now (e.g. started from the background): it starts again next time Лео is opened
+            // Not allowed now (e.g. started from the background): it starts again next time Leo is opened
             stopSelf()
             return START_NOT_STICKY
         }
@@ -150,8 +151,8 @@ class WakeWordService : Service() {
 
     private fun notification(): Notification {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Пробудження «Привіт, Лео»", NotificationManager.IMPORTANCE_MIN).apply {
-                description = "Показується, поки Лео чекає на ключову фразу"
+            NotificationChannel(CHANNEL_ID, "Пробудження «Привіт, Leo»", NotificationManager.IMPORTANCE_MIN).apply {
+                description = "Показується, поки Leo чекає на ключову фразу"
             }
         )
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -160,7 +161,7 @@ class WakeWordService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_mic)
-            .setContentTitle("Лео чекає на «Привіт, Лео»")
+            .setContentTitle("Leo чекає на «Привіт, Leo»")
             .setContentText("Розпізнавання офлайн — нікуди не надсилається")
             .setContentIntent(open)
             .addAction(R.drawable.ic_stop, "Вимкнути", off)
@@ -183,8 +184,10 @@ class WakeWordService : Service() {
         fun isEnabled(context: Context) =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
 
-        fun setEnabled(context: Context, enabled: Boolean) =
+        fun setEnabled(context: Context, enabled: Boolean) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putBoolean(KEY_ENABLED, enabled) }
+            LeoWidget.refresh(context)
+        }
 
         fun sensitivity(context: Context): WakeSensitivity =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_SENSITIVITY, null)

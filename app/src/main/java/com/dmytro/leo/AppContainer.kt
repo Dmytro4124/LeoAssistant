@@ -4,6 +4,8 @@ import android.content.Context
 import com.dmytro.leo.assistant.ChatLog
 import com.dmytro.leo.assistant.ServiceForegroundKeeper
 import com.dmytro.leo.assistant.VoiceSession
+import com.dmytro.leo.assistant.VoiceState
+import com.dmytro.leo.widget.LeoWidget
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.brain.AgentLoop
 import com.dmytro.leo.brain.GeminiApi
@@ -32,15 +34,17 @@ import com.dmytro.leo.tools.AccessibilityScreenAgent
 import com.dmytro.leo.tools.AndroidCommActions
 import com.dmytro.leo.voice.AudioHandoff
 import com.dmytro.leo.tools.EndConversationTool
+import com.dmytro.leo.tools.GoogleSearchTool
+import com.dmytro.leo.tools.LookAtScreenTool
+import com.dmytro.leo.tools.PixelWeather
 import com.dmytro.leo.tools.AndroidMediaActions
 import com.dmytro.leo.tools.AndroidPhoneActions
 import com.dmytro.leo.tools.CallTool
-import com.dmytro.leo.tools.ExchangeRateTool
+import com.dmytro.leo.tools.ClaudeAppTool
 import com.dmytro.leo.tools.ConfirmationGate
 import com.dmytro.leo.tools.FindContactTool
 import com.dmytro.leo.tools.MediaActions
 import com.dmytro.leo.tools.MediaControlTool
-import com.dmytro.leo.tools.NewsTool
 import com.dmytro.leo.tools.NavigateTool
 import com.dmytro.leo.tools.OpenAppTool
 import com.dmytro.leo.tools.PhoneActions
@@ -62,7 +66,6 @@ import com.dmytro.leo.tools.UiStepLimiter
 import com.dmytro.leo.tools.UiTypeTool
 import com.dmytro.leo.tools.UserTurns
 import com.dmytro.leo.tools.WeatherTool
-import com.dmytro.leo.tools.WikipediaTool
 import com.dmytro.leo.voice.AndroidAudioFocus
 import com.dmytro.leo.voice.AndroidMicStream
 import com.dmytro.leo.voice.AndroidPcmPlayer
@@ -78,6 +81,9 @@ import com.dmytro.leo.wake.WakeModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
@@ -136,10 +142,10 @@ class AppContainer(context: Context) {
             SendSmsTool(contacts, contactAliases, ownNumber, confirmations, comm),
             SendMessageTool(contacts, contactAliases, ownNumber, chats, confirmations, phone, AccessibilityAutoSender(appContext)),
             SaveChatTool(chats),
-            WeatherTool(web),
-            ExchangeRateTool(web),
-            NewsTool(web),
-            WikipediaTool(web),
+            WeatherTool(web, PixelWeather(phone, screenAgent)),
+            GoogleSearchTool(phone, screenAgent),
+            ClaudeAppTool(phone, screenAgent),
+            LookAtScreenTool(screenAgent, gemini),
             UiReadScreenTool(screenAgent, uiSteps),
             UiClickTool(screenAgent, uiSteps, confirmations),
             UiTypeTool(screenAgent, uiSteps),
@@ -187,4 +193,11 @@ class AppContainer(context: Context) {
         foreground = ServiceForegroundKeeper(appContext),
         audioHandoff = audioHandoff,
     )
+
+    init {
+        // The home-screen widget shows a stop button while a conversation runs
+        appScope.launch {
+            voiceSession.state.map { it != VoiceState.Idle }.distinctUntilChanged().collect { LeoWidget.refresh(appContext) }
+        }
+    }
 }

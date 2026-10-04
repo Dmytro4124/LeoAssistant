@@ -62,14 +62,14 @@ fun SetupBanners() {
     Column {
         if (missing.isNotEmpty()) {
             Banner(
-                text = "Щоб дзвонити й надсилати повідомлення, Лео потрібен доступ до контактів, дзвінків і SMS.",
+                text = "Щоб дзвонити й надсилати повідомлення, Leo потрібен доступ до контактів, дзвінків і SMS.",
                 action = "Надати",
                 onAction = { request.launch(missing.toTypedArray()) },
             )
         }
         if (!autoSendOn && !autoSendDismissed) {
             Banner(
-                text = "Щоб Лео сам надсилав повідомлення в месенджерах, увімкни «Лео: надсилання повідомлень» у спеціальних можливостях. Плаваючу кнопку-ярлик краще вимкнути: її торкання вимикає сервіс.",
+                text = "Щоб Leo сам надсилав повідомлення в месенджерах, увімкни «Leo: надсилання повідомлень» у спеціальних можливостях. Плаваючу кнопку-ярлик краще вимкнути: її торкання вимикає сервіс.",
                 action = "Увімкнути",
                 onAction = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                 onDismiss = { autoSendDismissed = true },

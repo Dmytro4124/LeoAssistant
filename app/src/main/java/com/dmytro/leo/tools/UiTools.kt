@@ -2,17 +2,20 @@ package com.dmytro.leo.tools
 
 import com.dmytro.leo.accessibility.RiskyActions
 import com.dmytro.leo.accessibility.ScreenResult
+import com.dmytro.leo.accessibility.Snapshot
 import com.dmytro.leo.accessibility.UiAgentService
 import com.dmytro.leo.accessibility.UiElement
 import kotlinx.serialization.json.JsonObject
 
 /** The screen, as the UI agent tools see it. The Android one is the accessibility service; tests use a fake. */
 interface ScreenAgent {
-    suspend fun read(): ScreenResult
+    suspend fun read(detailed: Boolean = false): ScreenResult
     suspend fun click(id: Int): ScreenResult
     suspend fun type(id: Int, text: String): ScreenResult
     suspend fun scroll(id: Int?, forward: Boolean): ScreenResult
     suspend fun back(): ScreenResult
+    /** A screenshot of the whole screen (fakes in tests have none). */
+    suspend fun screenshot(): Snapshot = Snapshot.NotEnabled
     /** An element of the last screen read. */
     fun element(id: Int): UiElement?
     val currentPackage: String?
@@ -20,11 +23,12 @@ interface ScreenAgent {
 
 class AccessibilityScreenAgent : ScreenAgent {
     private val service get() = UiAgentService.instance
-    override suspend fun read() = service?.read() ?: ScreenResult.NotEnabled
+    override suspend fun read(detailed: Boolean) = service?.read(detailed) ?: ScreenResult.NotEnabled
     override suspend fun click(id: Int) = service?.click(id) ?: ScreenResult.NotEnabled
     override suspend fun type(id: Int, text: String) = service?.type(id, text) ?: ScreenResult.NotEnabled
     override suspend fun scroll(id: Int?, forward: Boolean) = service?.scroll(id, forward) ?: ScreenResult.NotEnabled
     override suspend fun back() = service?.back() ?: ScreenResult.NotEnabled
+    override suspend fun screenshot() = service?.screenshot() ?: Snapshot.NotEnabled
     override fun element(id: Int) = service?.element(id)
     override val currentPackage get() = service?.currentPackage
 }
@@ -46,7 +50,7 @@ class UiStepLimiter(private val turns: UserTurns, private val max: Int = 20) {
 private fun ScreenResult.toToolResult(): ToolResult = when (this) {
     is ScreenResult.Ok -> ToolResult.Success(screen.text)
     ScreenResult.NotEnabled -> ToolResult.Failure(
-        "Керування екраном вимкнене. Попроси користувача увімкнути «Лео: керування екраном» у налаштуваннях Лео."
+        "Керування екраном вимкнене. Попроси користувача увімкнути «Leo: керування екраном» у налаштуваннях Leo."
     )
     ScreenResult.NoWindow -> ToolResult.Failure("Не бачу на екрані жодної програми. Спершу відкрий її через open_app.")
     is ScreenResult.Blocked -> ToolResult.Failure(

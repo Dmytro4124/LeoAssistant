@@ -3,14 +3,19 @@ package com.dmytro.leo.accessibility
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.Path
 import android.os.Bundle
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import kotlin.coroutines.resume
 
 /** What happened when the agent looked at or acted on the screen. */
 sealed interface ScreenResult {
@@ -22,8 +27,16 @@ sealed interface ScreenResult {
     data class Failed(val message: String) : ScreenResult
 }
 
+/** A screenshot for "Leo, подивись…": JPEG bytes, or why there is none. */
+sealed interface Snapshot {
+    class Image(val jpeg: ByteArray) : Snapshot
+    data object NotEnabled : Snapshot
+    data class Blocked(val app: String) : Snapshot
+    data class Failed(val message: String) : Snapshot
+}
+
 /**
- * "Лео: керування екраном". Reads the screen of the app the user is in and performs
+ * "Leo: керування екраном". Reads the screen of the app the user is in and performs
  * clicks, typing, scrolling and Back for the UI agent tools. Does nothing on its own:
  * every action comes from a tool call in a conversation the user started.
  */
@@ -49,7 +62,8 @@ class UiAgentService : AccessibilityService() {
     fun element(id: Int): UiElement? = lastScreen?.elements?.get(id)
     val currentPackage: String? get() = lastPackage
 
-    suspend fun read(): ScreenResult = withContext(Dispatchers.Main) {
+    /** [detailed]: more and longer texts, for reading content (search results) rather than acting. */
+    suspend fun read(detailed: Boolean = false): ScreenResult = withContext(Dispatchers.Main) {
         // A bank anywhere on screen blocks everything — also when a system dialog (fingerprint,
         // PIN) sits on top of it and is technically the topmost window
         sensitiveAppOnScreen()?.let { pkg ->
@@ -86,11 +100,42 @@ class UiAgentService : AccessibilityService() {
             )
         }
 
-        val screen = ScreenFormatter.format(app, copy(root, emptyList(), 0))
+        val screen = if (detailed) ScreenFormatter.format(app, copy(root, emptyList(), 0), maxLines = 250, maxText = 1500)
+            else ScreenFormatter.format(app, copy(root, emptyList(), 0))
         nodes = screen.elements.mapNotNull { (id, element) -> byPath[element.path]?.let { id to it } }.toMap()
         lastScreen = screen
         lastPackage = pkg
         ScreenResult.Ok(screen)
+    }
+
+    /** The whole screen as a JPEG (longest side up to [MAX_SHOT_SIDE]), never with a bank or password app on it. */
+    suspend fun screenshot(): Snapshot {
+        val blocked = withContext(Dispatchers.Main) { sensitiveAppOnScreen() }
+        if (blocked != null) return Snapshot.Blocked(appLabel(blocked))
+        val bitmap = suspendCancellableCoroutine<Bitmap?> { cont ->
+            takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+                override fun onSuccess(result: ScreenshotResult) {
+                    val buffer = result.hardwareBuffer
+                    // A hardware bitmap can't be scaled or compressed: copy it into memory first
+                    val copy = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)?.copy(Bitmap.Config.ARGB_8888, false)
+                    buffer.close()
+                    cont.resume(copy)
+                }
+
+                override fun onFailure(errorCode: Int) = cont.resume(null)
+            })
+        } ?: return Snapshot.Failed("Android не дав зробити знімок екрана")
+        return withContext(Dispatchers.Default) {
+            val scale = MAX_SHOT_SIDE.toFloat() / maxOf(bitmap.width, bitmap.height)
+            val scaled = if (scale < 1f) Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt(), (bitmap.height * scale).toInt(), true) else bitmap
+            val jpeg = ByteArrayOutputStream().use { out ->
+                scaled.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                out.toByteArray()
+            }
+            if (scaled !== bitmap) scaled.recycle()
+            bitmap.recycle()
+            Snapshot.Image(jpeg)
+        }
     }
 
     suspend fun click(id: Int): ScreenResult = act(id) { node ->
@@ -134,7 +179,7 @@ class UiAgentService : AccessibilityService() {
     }
 
     /**
-     * The app the user is in: the topmost application window that is neither Лео itself
+     * The app the user is in: the topmost application window that is neither Leo itself
      * (the assistant panel may be on top) nor a system dialog.
      */
     private fun targetRoot(): AccessibilityNodeInfo? {
@@ -173,6 +218,7 @@ class UiAgentService : AccessibilityService() {
         private const val MAX_DEPTH = 40
         private const val MAX_NODES = 800
         private const val SETTLE_MS = 900L
+        private const val MAX_SHOT_SIDE = 1600
         private const val SYSTEM_UI = "com.android.systemui"
     }
 }

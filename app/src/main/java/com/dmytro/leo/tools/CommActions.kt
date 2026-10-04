@@ -77,7 +77,7 @@ class AccessibilityAutoSender(context: Context) : AutoSender {
         }
         if (result != AutoSendResult.Sent) {
             appContext.getSystemService(ClipboardManager::class.java)
-                .setPrimaryClip(ClipData.newPlainText("Лео", text))
+                .setPrimaryClip(ClipData.newPlainText("Leo", text))
         }
         return result
     }

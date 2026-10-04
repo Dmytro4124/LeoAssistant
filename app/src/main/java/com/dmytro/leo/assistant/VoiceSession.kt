@@ -220,6 +220,6 @@ class VoiceSession(
 
     companion object {
         /** Sent first when a conversation is started by voice, so the model starts in Ukrainian. */
-        const val WAKE_GREETING = "Привіт, Лео!"
+        const val WAKE_GREETING = "Привіт, Leo!"
     }
 }

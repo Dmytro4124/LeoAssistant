@@ -2,4 +2,13 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- House colors: gold lion on crimson -->
+    <color name="lion_gold">#FFD9A93F</color>
+    <color name="lion_gold_light">#FFF3D58A</color>
+    <color name="lion_gold_dark">#FFB9822A</color>
+    <color name="lion_gold_face">#FFEDBF5A</color>
+    <color name="lion_crimson">#FF7A1016</color>
+    <color name="lion_crimson_dark">#FF3E0709</color>
+    <color name="lion_night">#FF160C0C</color>
 </resources>

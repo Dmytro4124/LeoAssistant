@@ -17,11 +17,11 @@ fun Context.requestLeoWidget() {
     if (manager.isRequestPinAppWidgetSupported) {
         manager.requestPinAppWidget(ComponentName(this, LeoWidget::class.java), null, null)
     } else {
-        Toast.makeText(this, "Додай віджет вручну: довге натискання на головному екрані → Віджети → Лео", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Додай віджет вручну: довге натискання на головному екрані → Віджети → Leo", Toast.LENGTH_LONG).show()
     }
 }
 
-/** Asks the system to add the "Лео" tile to Quick Settings (Android 13+), otherwise explains how. */
+/** Asks the system to add the "Leo" tile to Quick Settings (Android 13+), otherwise explains how. */
 fun Context.requestLeoTile() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         getSystemService(StatusBarManager::class.java).requestAddTileService(
@@ -31,6 +31,6 @@ fun Context.requestLeoTile() {
             mainExecutor,
         ) { }
     } else {
-        Toast.makeText(this, "Додай плитку вручну: шторка → олівець → «Лео»", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Додай плитку вручну: шторка → олівець → «Leo»", Toast.LENGTH_LONG).show()
     }
 }

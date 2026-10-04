@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,6 +33,7 @@ class ToolsTest {
         val (uri, pkg) = phone.openedUris.single()
         assertTrue(uri.startsWith("google.navigation:q="))
         assertEquals("com.google.android.apps.maps", pkg)
+        assertFalse("the conversation goes on during navigation", (result as ToolResult.Success).endsConversation)
     }
 
     @Test

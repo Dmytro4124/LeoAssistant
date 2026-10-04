@@ -46,9 +46,9 @@ class NavigateTool(
         val link = MapsLinks.navigation(destination, args.string("mode"))
 
         return when {
-            phone.openUri(link, GOOGLE_MAPS) -> ToolResult.Success("Навігацію до «$destination» запущено", endsConversation = true)
+            phone.openUri(link, GOOGLE_MAPS) -> ToolResult.Success("Навігацію до «$destination» запущено")
             // No Google Maps: let any map app show the place
-            phone.openUri(MapsLinks.search(destination)) -> ToolResult.Success("Google Maps немає, місце відкрито в іншій карті", endsConversation = true)
+            phone.openUri(MapsLinks.search(destination)) -> ToolResult.Success("Google Maps немає, місце відкрито в іншій карті")
             else -> ToolResult.Failure("На телефоні немає додатка карт")
         }
     }

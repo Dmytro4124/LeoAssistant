@@ -29,7 +29,7 @@ import kotlin.math.sqrt
  * One spoken conversation with the Live model: the microphone streams to Gemini, its
  * voice streams to the speaker, and both sides arrive as text transcripts for the chat.
  * Silence does not end it: only cancelling [run]'s caller (the stop button), or an action
- * that ends the conversation by itself (music, navigation, a call, "бувай" → end_conversation).
+ * that ends the conversation by itself (music, a call, "бувай" → end_conversation).
  */
 class LiveConversation(
     private val live: LiveApi,
@@ -82,7 +82,7 @@ class LiveConversation(
         var closedByUs = false
         var failed = false
 
-        // After music or navigation starts, the session ends once the model has confirmed it
+        // After music or a call starts, the session ends once the model has confirmed it
         var endAfterAction = false
         var confirmedAfterAction = false
         var spokeAfterAction = false

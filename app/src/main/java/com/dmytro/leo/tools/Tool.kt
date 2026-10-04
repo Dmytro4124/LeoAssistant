@@ -24,7 +24,7 @@ interface Tool {
 /** Outcome of a tool, sent back to Gemini, which then tells the user in its own words. */
 sealed interface ToolResult {
     /**
-     * [endsConversation]: the action takes over the sound or the user's attention (music, navigation,
+     * [endsConversation]: the action takes over the sound or the user's attention (music,
      * a call), so a voice session ends once the agent has confirmed it. Just opening
      * an app does not end it: the conversation goes on over the other app ("відкрий телеграм" → "напиши…").
      */

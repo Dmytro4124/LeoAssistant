@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 
 /**
  * The only thing this service does: after the user has confirmed a message by voice and
- * Лео has opened the chat, it makes sure that text is in the message field and presses "Надіслати".
+ * Leo has opened the chat, it makes sure that text is in the message field and presses "Надіслати".
  *
  * Safety: it can see only Telegram, WhatsApp, Viber, Instagram and Discord (res/xml/auto_send_service.xml),
  * does nothing on its own, never touches an existing draft, and presses Send only when the

@@ -7,7 +7,7 @@ class FakePhone(private val available: (uri: String, packageName: String?) -> Bo
     val openedApps = mutableListOf<String>()
     val openedUris = mutableListOf<Pair<String, String?>>()
 
-    override fun openApp(packageName: String): Boolean {
+    override fun openApp(packageName: String, fresh: Boolean): Boolean {
         openedApps += packageName
         return true
     }
@@ -15,6 +15,12 @@ class FakePhone(private val available: (uri: String, packageName: String?) -> Bo
     override fun openUri(uri: String, packageName: String?): Boolean {
         if (!available(uri, packageName)) return false
         openedUris += uri to packageName
+        return true
+    }
+
+    val searches = mutableListOf<String>()
+    override fun webSearch(query: String, packageName: String): Boolean {
+        searches += query
         return true
     }
 }
