@@ -11,6 +11,7 @@ enum class Messenger(val packageName: String, internal val dataMimeType: String?
     Viber("com.viber.voip", "vnd.android.cursor.item/vnd.com.viber.voip.viber_number_message"),
     Instagram("com.instagram.android", null),
     Discord("com.discord", null),
+    Slack("com.Slack", null),
 }
 
 data class PhoneNumber(val number: String, val label: String)

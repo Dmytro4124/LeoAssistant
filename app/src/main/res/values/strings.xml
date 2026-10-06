@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Leo</string>
     <string name="auto_send_label">Leo: надсилання повідомлень</string>
-    <string name="auto_send_description">Після того як ти голосом підтвердиш повідомлення, Leo відкриває чат у Telegram, WhatsApp, Viber, Instagram чи Discord, вписує цей текст і натискає «Надіслати». Сервіс бачить лише ці месенджери, не чіпає твоїх чернеток і нічого не робить без твого підтвердження.</string>
+    <string name="auto_send_description">Після того як ти голосом підтвердиш повідомлення, Leo відкриває чат у Telegram, WhatsApp, Viber, Instagram, Discord чи Slack, вписує цей текст і натискає «Надіслати». Сервіс бачить лише ці месенджери, не чіпає твоїх чернеток і нічого не робить без твого підтвердження.</string>
     <string name="widget_label">Говорити з Leo</string>
     <string name="widget_description">Почати чи зупинити розмову з Leo і ввімкнути «Привіт, Leo»</string>
     <string name="widget_status_idle">Натисни й говори</string>
@@ -10,5 +10,6 @@
     <string name="widget_status_wake">Чекаю на поклик</string>
     <string name="tile_label">Leo</string>
     <string name="ui_agent_label">Leo: керування екраном</string>
+    <string name="messages_label">Leo: нові повідомлення</string>
     <string name="ui_agent_description">Дозволяє Leo на твоє прохання читати екран програми й натискати в ній кнопки: «увімкни перемішування», «знайди чат з Олегом». Leo не діє сам, не заходить у банки, гаманці й менеджери паролів, не бачить паролів і питає підтвердження перед незворотними діями. Текст з екрана, який Leo читає, надсилається в Gemini.</string>
 </resources>

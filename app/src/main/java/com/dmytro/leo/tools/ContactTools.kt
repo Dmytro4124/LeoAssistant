@@ -190,13 +190,13 @@ class SendMessageTool(
 
     override val name = "send_message"
     override val description =
-        "Надіслати повідомлення в Telegram, WhatsApp, Viber, Instagram або Discord. " +
+        "Надіслати повідомлення в Telegram, WhatsApp, Viber, Instagram, Discord або Slack. " +
             "Для Telegram/WhatsApp/Viber спершу знайди людину через find_contact (або contact_id=self — собі, у Збережене). " +
-            "Instagram і Discord — лише в збережені чати (параметр chat); збережені чати бувають і для Telegram-груп. " +
+            "Instagram, Discord і Slack — лише в збережені чати (параметр chat); збережені чати бувають і для Telegram-груп. " +
             "Надсилається лише після підтвердження користувача."
     override val parameters = objectSchema(
-        Param("app", "Месенджер", enum = listOf("telegram", "whatsapp", "viber", "instagram", "discord")),
-        Param("chat", "Назва збереженого чату (обов'язково для Instagram і Discord)", required = false),
+        Param("app", "Месенджер", enum = listOf("telegram", "whatsapp", "viber", "instagram", "discord", "slack")),
+        Param("chat", "Назва збереженого чату (обов'язково для Instagram, Discord і Slack)", required = false),
         *RECIPIENT_PARAMS,
         Param("text", "Текст повідомлення"),
         CONFIRMATION_PARAM,
@@ -209,7 +209,8 @@ class SendMessageTool(
             "viber" -> Messenger.Viber
             "instagram" -> Messenger.Instagram
             "discord" -> Messenger.Discord
-            else -> return ToolResult.Failure("Вкажи app: telegram, whatsapp, viber, instagram або discord")
+            "slack" -> Messenger.Slack
+            else -> return ToolResult.Failure("Вкажи app: telegram, whatsapp, viber, instagram, discord або slack")
         }
         val text = args.string("text") ?: return ToolResult.Failure("Не вказано текст")
 
@@ -220,7 +221,7 @@ class SendMessageTool(
             if (chat.messenger != messenger) return ToolResult.Failure("Чат «$chatName» збережено для ${chat.messenger.name}, а не ${messenger.name}")
             chatName to chat.link
         } ?: run {
-            if (messenger == Messenger.Instagram || messenger == Messenger.Discord) {
+            if (messenger == Messenger.Instagram || messenger == Messenger.Discord || messenger == Messenger.Slack) {
                 return ToolResult.Failure(
                     "Для ${messenger.name} потрібен збережений чат (параметр chat). Збережені: " +
                         chats.all().filterValues { it.messenger == messenger }.keys.ifEmpty { listOf("немає") }.joinToString() +
@@ -259,17 +260,17 @@ class SaveChatTool(private val chats: ChatStore) : Tool {
     override val name = "save_chat"
     override val description =
         "Запам'ятати чат за посиланням, щоб потім писати туди голосом: профіль Instagram, канал чи особисті " +
-            "повідомлення Discord, група чи канал Telegram. Користувач ділиться посиланням з Leo. Якщо назви немає — спитай її."
+            "повідомлення Discord, канал чи особисті повідомлення Slack, група чи канал Telegram. Користувач ділиться посиланням з Leo. Якщо назви немає — спитай її."
     override val parameters = objectSchema(
         Param("name", "Як користувач називатиме чат: «Лера», «друзі в дискорді»"),
-        Param("link", "Посилання: instagram.com/…, discord.com/channels/…, t.me/…"),
+        Param("link", "Посилання: instagram.com/…, discord.com/channels/…, <робочий простір>.slack.com/archives/…, t.me/…"),
     )
 
     override suspend fun execute(args: JsonObject): ToolResult {
         val chatName = args.string("name") ?: return ToolResult.Failure("Не вказано назву чату")
         val link = args.string("link") ?: return ToolResult.Failure("Не вказано посилання")
         val chat = ChatStore.chatFromLink(link)
-            ?: return ToolResult.Failure("Це не посилання на чат Instagram, Discord чи Telegram")
+            ?: return ToolResult.Failure("Це не посилання на чат Instagram, Discord, Slack чи Telegram")
         chats.save(chatName, chat)
         return ToolResult.Success("Запам'ятав чат «$chatName» (${chat.messenger.name})")
     }
@@ -284,7 +285,7 @@ object MessengerLinks {
             Messenger.Telegram -> "tg://resolve?phone=$digits&text=$encoded"
             Messenger.WhatsApp -> "https://api.whatsapp.com/send?phone=$digits&text=$encoded"
             Messenger.Viber -> "viber://chat?number=%2B$digits&draft=$encoded"
-            Messenger.Instagram, Messenger.Discord -> error("${messenger.name} has no phone-number chats")
+            Messenger.Instagram, Messenger.Discord, Messenger.Slack -> error("${messenger.name} has no phone-number chats")
         }
     }
 }

@@ -12,6 +12,7 @@ import com.dmytro.leo.data.ChatStore
 import com.dmytro.leo.data.ContactAliases
 import com.dmytro.leo.data.ContactsSource
 import com.dmytro.leo.data.PlacesStore
+import com.dmytro.leo.data.IgnoredChatsStore
 import com.dmytro.leo.data.PlaylistStore
 import com.dmytro.leo.voice.SpeechOutput
 import com.dmytro.leo.voice.TtsVoice
@@ -48,6 +49,7 @@ data class SettingsUiState(
     val places: List<SavedItem> = emptyList(),
     val playlists: List<SavedItem> = emptyList(),
     val chats: List<SavedItem> = emptyList(),
+    val ignoredChats: List<SavedItem> = emptyList(),
     val contactAliases: List<SavedItem> = emptyList(),
     val aboutMe: String = "",
     val wake: WakeUi = WakeUi.Off,
@@ -60,6 +62,7 @@ class SettingsViewModel(
     private val places: PlacesStore,
     private val playlists: PlaylistStore,
     private val chats: ChatStore,
+    private val ignoredChats: IgnoredChatsStore,
     private val aliases: ContactAliases,
     private val contacts: ContactsSource,
     private val aboutMe: AboutMeStore,
@@ -100,6 +103,7 @@ class SettingsViewModel(
                     places = places.all().map { SavedItem(it.key, it.value) },
                     playlists = playlists.all().keys.map { SavedItem(it, "YouTube Music") },
                     chats = chats.all().map { SavedItem(it.key, it.value.messenger.name) },
+                    ignoredChats = ignoredChats.all().map { SavedItem(it.key, it.value) },
                     contactAliases = aliases.all().map { (alias, target) ->
                         val detail = when {
                             target.startsWith("contact:") -> target.removePrefix("contact:").toLongOrNull()
@@ -160,6 +164,7 @@ class SettingsViewModel(
     fun removePlace(name: String) = places.remove(name).also { refresh() }
     fun removePlaylist(name: String) = playlists.remove(name).also { refresh() }
     fun removeChat(name: String) = chats.remove(name).also { refresh() }
+    fun removeIgnoredChat(name: String) = ignoredChats.remove(name).also { refresh() }
     fun removeAlias(name: String) = aliases.remove(name).also { refresh() }
 
     companion object {
@@ -169,7 +174,7 @@ class SettingsViewModel(
             initializer {
                 val c = (this[APPLICATION_KEY] as LeoApp).container
                 SettingsViewModel(
-                    c.voiceSettings, c.speaker, c.places, c.playlists, c.chats, c.contactAliases, c.contacts, c.aboutMe,
+                    c.voiceSettings, c.speaker, c.places, c.playlists, c.chats, c.ignoredChats, c.contactAliases, c.contacts, c.aboutMe,
                     c.wakeModel, this[APPLICATION_KEY] as Context,
                 )
             }

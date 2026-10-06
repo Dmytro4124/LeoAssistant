@@ -1,6 +1,7 @@
 package com.dmytro.leo.ui
 
 import android.os.Build
+import android.content.ComponentName
 import android.content.Intent
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -53,6 +54,7 @@ import com.dmytro.leo.R
 import com.dmytro.leo.accessibility.UiAgentService
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.data.AboutMeStore
+import com.dmytro.leo.messages.MessageNotificationService
 import com.dmytro.leo.voice.VoiceMode
 import com.dmytro.leo.voice.VoiceSettings
 import com.dmytro.leo.wake.WakeSensitivity
@@ -64,10 +66,12 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var uiAgentOn by remember { mutableStateOf(context.isAccessibilityServiceOn(UiAgentService::class.java)) }
+    var messagesOn by remember { mutableStateOf(MessageNotificationService.isAllowed(context)) }
     BackHandler(onBack = onBack)
     LifecycleResumeEffect(Unit) {
         viewModel.refresh()
         uiAgentOn = context.isAccessibilityServiceOn(UiAgentService::class.java)
+        messagesOn = MessageNotificationService.isAllowed(context)
         onPauseOrDispose { }
     }
 
@@ -117,7 +121,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
 
             savedSection("Місця", state.places, "Скажи: «Запам'ятай, що мій дім — …»", viewModel::removePlace)
             savedSection("Плейлисти", state.playlists, "У YouTube Music: «Поділитися» плейлистом → Leo", viewModel::removePlaylist)
-            savedSection("Чати Instagram, Discord, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Leo", viewModel::removeChat)
+            savedSection("Чати Instagram, Discord, Slack, Telegram", state.chats, "У месенджері: «Поділитися» профілем чи повідомленням → Leo", viewModel::removeChat)
             savedSection("Як ти називаєш людей", state.contactAliases, "Скажи: «Запам'ятай, що мама — це …»", viewModel::removeAlias)
 
             section("Керування екраном")
@@ -133,6 +137,34 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
                     modifier = Modifier.clickable { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
                 )
             }
+
+            section("Повідомлення")
+            item(key = "messages") {
+                ListItem(
+                    headlineContent = { Text(if (messagesOn) "Доступ до сповіщень — увімкнено" else "Доступ до сповіщень — вимкнено") },
+                    supportingContent = {
+                        Text(
+                            "Щоб на «чи мені ніхто не писав?» Leo перевіряв нові повідомлення в Telegram, WhatsApp, Viber, " +
+                                "Instagram, Discord і Slack. Читає сповіщення лише на прохання; їхній текст іде в Gemini."
+                        )
+                    },
+                    modifier = Modifier.clickable {
+                        context.startActivity(
+                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS).putExtra(
+                                Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                                ComponentName(context, MessageNotificationService::class.java).flattenToString(),
+                            )
+                        )
+                    },
+                )
+            }
+
+            savedSection(
+                "Чати, які Leo пропускає",
+                state.ignoredChats.map { if (it.detail.isEmpty()) it.copy(detail = "Месенджер") else it },
+                "Боти й розсилки: скажи «це бот, не зважай на нього»",
+                viewModel::removeIgnoredChat,
+            )
 
             section("Швидкий виклик")
             item(key = "widget") {

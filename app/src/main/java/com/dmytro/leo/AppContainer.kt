@@ -24,13 +24,18 @@ import com.dmytro.leo.data.AndroidContacts
 import com.dmytro.leo.data.AndroidInstalledApps
 import com.dmytro.leo.data.AndroidOwnNumber
 import com.dmytro.leo.data.AndroidPlacesStore
+import com.dmytro.leo.data.AndroidIgnoredChatsStore
 import com.dmytro.leo.data.AndroidPlaylistStore
+import com.dmytro.leo.data.IgnoredChatsStore
 import com.dmytro.leo.data.OkHttpGet
 import com.dmytro.leo.data.PlacesStore
 import com.dmytro.leo.data.PlaylistStore
 import com.dmytro.leo.data.YouTubeMusicSearch
 import com.dmytro.leo.tools.AccessibilityAutoSender
 import com.dmytro.leo.tools.AccessibilityScreenAgent
+import com.dmytro.leo.tools.CheckMessagesTool
+import com.dmytro.leo.tools.IgnoreChatTool
+import com.dmytro.leo.tools.NotificationInbox
 import com.dmytro.leo.tools.AndroidCommActions
 import com.dmytro.leo.voice.AudioHandoff
 import com.dmytro.leo.tools.EndConversationTool
@@ -108,6 +113,8 @@ class AppContainer(context: Context) {
 
     val places: PlacesStore = AndroidPlacesStore(appContext)
     val playlists: PlaylistStore = AndroidPlaylistStore(appContext)
+    val ignoredChats: IgnoredChatsStore = AndroidIgnoredChatsStore(appContext)
+    private val inbox = NotificationInbox(appContext)
     val aboutMe: AboutMeStore = AndroidAboutMeStore(appContext)
     private val installedApps = AndroidInstalledApps(appContext)
     private val media: MediaActions = AndroidMediaActions(appContext)
@@ -146,6 +153,8 @@ class AppContainer(context: Context) {
             GoogleSearchTool(phone, screenAgent),
             ClaudeAppTool(phone, screenAgent),
             LookAtScreenTool(screenAgent, gemini),
+            CheckMessagesTool(inbox, ignoredChats),
+            IgnoreChatTool(inbox, ignoredChats),
             UiReadScreenTool(screenAgent, uiSteps),
             UiClickTool(screenAgent, uiSteps, confirmations),
             UiTypeTool(screenAgent, uiSteps),

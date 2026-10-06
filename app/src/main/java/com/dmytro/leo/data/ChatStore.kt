@@ -3,7 +3,7 @@ package com.dmytro.leo.data
 import android.content.Context
 import androidx.core.content.edit
 
-/** A chat that has no phone number: an Instagram DM, a Discord channel, a Telegram group. */
+/** A chat that has no phone number: an Instagram DM, a Discord or Slack channel, a Telegram group. */
 data class SavedChat(val messenger: Messenger, val link: String)
 
 /** Chats by name: "лера" → Instagram DM with @lera. */
@@ -27,6 +27,7 @@ interface ChatStore {
          * A shared link → the chat it opens, or null if it isn't a chat link.
          * instagram.com/<user> or ig.me/m/<user> → Instagram DM;
          * discord.com/channels/<server|@me>/<channel>[/<message>] → that Discord channel;
+         * <workspace>.slack.com/archives/<channel>[/p<message>] → that Slack channel or DM (a link to any of its messages);
          * t.me/<name> → Telegram chat, group or channel.
          */
         fun chatFromLink(text: String): SavedChat? {
@@ -36,6 +37,9 @@ interface ChatStore {
             }
             Regex("""https?://(?:\w+\.)?discord(?:app)?\.com/channels/(@me|\d+)/(\d+)""").find(text)?.let {
                 return SavedChat(Messenger.Discord, "https://discord.com/channels/${it.groupValues[1]}/${it.groupValues[2]}")
+            }
+            Regex("""https?://([A-Za-z0-9-]+)\.slack\.com/archives/([CDG][A-Z0-9]+)""").find(text)?.let {
+                return SavedChat(Messenger.Slack, "https://${it.groupValues[1]}.slack.com/archives/${it.groupValues[2]}")
             }
             Regex("""https?://t\.me/([A-Za-z0-9_]{4,})""").find(text)?.let {
                 return SavedChat(Messenger.Telegram, "tg://resolve?domain=${it.groupValues[1]}")

@@ -184,6 +184,10 @@ class ContactToolsTest {
             SavedChat(Messenger.Discord, "https://discord.com/channels/123/456"),
             ChatStore.chatFromLink("Подивись https://canary.discord.com/channels/123/456"),
         )
+        assertEquals(
+            SavedChat(Messenger.Slack, "https://acme-team.slack.com/archives/D04ABCDEF12"),
+            ChatStore.chatFromLink("https://acme-team.slack.com/archives/D04ABCDEF12/p1727000000123456"),
+        )
         assertEquals(SavedChat(Messenger.Telegram, "tg://resolve?domain=my_group"), ChatStore.chatFromLink("https://t.me/my_group"))
         assertEquals(null, ChatStore.chatFromLink("https://www.instagram.com/p/C0ffee/"))
         assertEquals(null, ChatStore.chatFromLink("https://music.youtube.com/playlist?list=PL1"))
