@@ -68,11 +68,14 @@ class UiReadScreenTool(private val screen: ScreenAgent, private val limiter: UiS
     override val description =
         "Подивитися, що зараз на екрані програми: кнопки, поля й тексти з номерами [N]. " +
             "Для дій, яких немає серед інших інструментів (увімкнути перемішування, знайти щось у програмі). " +
-            "Не читай екран без потреби: його текст іде в Gemini."
-    override val parameters = objectSchema()
+            "Не читай екран без потреби: його текст іде в Gemini. Довгі тексти тут скорочено «…»; щоб прочитати " +
+            "вголос пост, статтю чи повідомлення повністю — full=true."
+    override val parameters = objectSchema(
+        Param("full", "«true» — тексти повністю, без скорочень (для читання вголос)", required = false, enum = listOf("true", "false")),
+    )
 
     override suspend fun execute(args: JsonObject): ToolResult =
-        if (!limiter.allow()) ToolResult.Failure(TOO_MANY_STEPS) else screen.read().toToolResult()
+        if (!limiter.allow()) ToolResult.Failure(TOO_MANY_STEPS) else screen.read(detailed = args.string("full") == "true").toToolResult()
 }
 
 class UiClickTool(

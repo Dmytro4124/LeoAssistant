@@ -172,7 +172,10 @@ class UiAgentService : AccessibilityService() {
 
     private suspend fun act(id: Int, action: (AccessibilityNodeInfo) -> Boolean): ScreenResult = withContext(Dispatchers.Main) {
         sensitiveAppOnScreen()?.let { return@withContext ScreenResult.Blocked(appLabel(it)) }
-        val node = nodes[id] ?: return@withContext ScreenResult.Failed("Елемента [$id] немає — спершу прочитай екран ще раз")
+        val node = nodes[id] ?: return@withContext ScreenResult.Failed(
+            "Елемента [$id] немає: на останньому прочитаному екрані номери лише від 1 до ${nodes.keys.maxOrNull() ?: 0}. " +
+                "Не вгадуй номер — бери його з ui_read_screen; якщо потрібної кнопки там немає, скажи про це користувачу"
+        )
         if (!action(node)) return@withContext ScreenResult.Failed("Не вдалося виконати дію з [$id] — екран міг змінитися, прочитай його ще раз")
         delay(SETTLE_MS)
         read()

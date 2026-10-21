@@ -4,6 +4,8 @@ import com.dmytro.leo.brain.Content
 import com.dmytro.leo.brain.FunctionCall
 import com.dmytro.leo.brain.FunctionResponse
 import com.dmytro.leo.brain.ToolDeclarations
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
@@ -20,20 +22,24 @@ data class LiveClientMessage(
     val toolResponse: LiveToolResponse? = null,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class LiveSetup(
     val model: String,
     val generationConfig: LiveGenerationConfig,
     val systemInstruction: Content? = null,
-    /** Empty object = "on": the server sends text transcripts of both sides. */
-    val inputAudioTranscription: EmptyConfig = EmptyConfig(),
-    val outputAudioTranscription: EmptyConfig = EmptyConfig(),
+    /** Set (even empty) = "on": the server sends text transcripts of both sides. */
+    @EncodeDefault val inputAudioTranscription: AudioTranscriptionConfig = AudioTranscriptionConfig(),
+    @EncodeDefault val outputAudioTranscription: AudioTranscriptionConfig = AudioTranscriptionConfig(),
     val contextWindowCompression: ContextWindowCompression? = null,
     val tools: List<ToolDeclarations>? = null,
 )
 
 @Serializable
-class EmptyConfig
+data class AudioTranscriptionConfig(
+    /** Languages expected in the audio (BCP-47); without them the language is detected automatically. */
+    val languageCodes: List<String>? = null,
+)
 
 @Serializable
 data class LiveGenerationConfig(

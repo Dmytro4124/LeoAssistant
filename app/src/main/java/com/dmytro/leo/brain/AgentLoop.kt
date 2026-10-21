@@ -35,6 +35,8 @@ class AgentLoop(
     private val promptNotes: () -> String = { "" },
     /** Shared with the confirmation gate: every user phrase counts, typed or spoken. */
     private val userTurns: UserTurns = UserTurns(),
+    /** Every finished exchange (typed or spoken), e.g. for building up the long-term memory. */
+    private val onExchange: (user: String, agent: String) -> Unit = { _, _ -> },
     maxHistoryMessages: Int = AgentConfig.MAX_HISTORY_MESSAGES,
 ) {
     private val conversation = Conversation(maxHistoryMessages)
@@ -76,6 +78,7 @@ class AgentLoop(
                     .ifEmpty { if (actions.isNotEmpty()) "Готово." else "" }
                 if (text.isEmpty()) return@withLock AgentReply.Error(GeminiError.EmptyResponse, actions)
                 conversation.add(*exchange.toTypedArray())
+                onExchange(userText, text)
                 return@withLock AgentReply.Text(text, actions)
             }
 
@@ -103,6 +106,7 @@ class AgentLoop(
     suspend fun remember(userText: String, agentText: String) = mutex.withLock {
         if (userText.isNotBlank() && agentText.isNotBlank()) {
             conversation.add(Content.user(userText), Content(role = "model", parts = listOf(Part(text = agentText))))
+            onExchange(userText, agentText)
         }
     }
 

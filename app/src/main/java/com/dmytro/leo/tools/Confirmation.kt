@@ -26,6 +26,20 @@ class ConfirmationGate(
     private class Pending(val key: String, val turn: Long, val createdAt: Long)
 
     private val pending = ConcurrentHashMap<String, Pending>()
+    private val preApproved = java.util.concurrent.atomic.AtomicInteger()
+
+    /**
+     * Runs a task the user already confirmed when they scheduled it ("о 18:00 надішли Олегу…"):
+     * meanwhile guarded tools act without asking again — the user isn't there to answer.
+     */
+    suspend fun <T> preApproved(block: suspend () -> T): T {
+        preApproved.incrementAndGet()
+        try {
+            return block()
+        } finally {
+            preApproved.decrementAndGet()
+        }
+    }
 
     /** Starts a confirmation for [key] (tool name + arguments); returns the token. */
     fun ask(key: String): String {
@@ -36,6 +50,7 @@ class ConfirmationGate(
 
     /** True once: the token exists, matches [key], is fresh, and the user has spoken since. */
     fun confirm(token: String?, key: String): Boolean {
+        if (preApproved.get() > 0) return true
         val request = token?.let { pending[it] } ?: return false
         val ok = request.key == key && turns.count > request.turn && now() - request.createdAt < TTL_MS
         if (ok) pending.remove(token)

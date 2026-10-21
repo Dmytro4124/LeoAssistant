@@ -86,10 +86,28 @@ class LiveConversationTest {
         server.push(LiveEvent.Ready)
         runCurrent()
         assertEquals(listOf("Привіт, Лео!"), server.texts)
+        assertFalse("the mic can't cut off the greeting's answer", mic.recording)
 
         server.push(LiveEvent.Audio(ByteArray(4)), LiveEvent.OutputTranscript("Привіт! Чим допомогти?"), LiveEvent.TurnComplete)
         runCurrent()
         assertEquals(Update.TurnFinished("Привіт, Лео!", "Привіт! Чим допомогти?"), updates.last { it is Update.TurnFinished })
+        assertTrue("listening once answered", mic.recording)
+        job.cancel()
+    }
+
+    @Test
+    fun `the mic starts anyway if the greeting gets no answer`() = runTest {
+        val job = launch {
+            conversation().run(session().let {
+                LiveConversation.Session(it.voiceName, it.systemPrompt, it.history, it.tools, it.runTool, openingPhrase = "Привіт, Лео!")
+            }) { updates += it }
+        }
+        server.push(LiveEvent.Ready)
+        runCurrent()
+        assertFalse(mic.recording)
+        advanceTimeBy(7_000)
+        runCurrent()
+        assertTrue(mic.recording)
         job.cancel()
     }
 

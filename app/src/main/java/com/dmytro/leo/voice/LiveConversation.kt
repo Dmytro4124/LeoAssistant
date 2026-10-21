@@ -6,6 +6,7 @@ import com.dmytro.leo.brain.FunctionResponse
 import com.dmytro.leo.brain.GeminiError
 import com.dmytro.leo.brain.ToolAction
 import com.dmytro.leo.brain.ToolDeclarations
+import com.dmytro.leo.brain.live.AudioTranscriptionConfig
 import com.dmytro.leo.brain.live.ContextWindowCompression
 import com.dmytro.leo.brain.live.LiveApi
 import com.dmytro.leo.brain.live.LiveEvent
@@ -95,6 +96,18 @@ class LiveConversation(
             agentText.clear()
         }
 
+        var greetingTimeout: Job? = null
+        fun startMic() {
+            greetingTimeout?.cancel()
+            if (micJob != null) return
+            micJob = launch {
+                mic.stream().collect { chunk ->
+                    connection.sendAudio(chunk)
+                    if (!player.isSpeaking) onUpdate(Update.Listening(loudnessDb(chunk)))
+                }
+            }
+        }
+
         // Switches the UI back to "listening" when playback ends, and ends the session after an action
         val watchdog = launch {
             var wasSpeaking = false
@@ -121,16 +134,18 @@ class LiveConversation(
                         ready = true
                         lastActivity = now()
                         connection.sendHistory(session.history)
-                        session.openingPhrase?.let { phrase ->
+                        onUpdate(Update.Listening(0f))
+                        val phrase = session.openingPhrase
+                        if (phrase == null) startMic() else {
                             userText.append(phrase)
                             onUpdate(Update.UserTranscript(phrase))
                             connection.sendText(phrase)
-                        }
-                        onUpdate(Update.Listening(0f))
-                        micJob = launch {
-                            mic.stream().collect { chunk ->
-                                connection.sendAudio(chunk)
-                                if (!player.isSpeaking) onUpdate(Update.Listening(loudnessDb(chunk)))
+                            // The mic waits until the greeting is answered: any sound it picked up
+                            // (the beep, the end of the wake phrase) would count as the user talking
+                            // and cut the answer off, leaving Leo silent
+                            greetingTimeout = launch {
+                                delay(GREETING_WAIT_MS)
+                                startMic()
                             }
                         }
                     }
@@ -158,6 +173,7 @@ class LiveConversation(
                     }
                     LiveEvent.TurnComplete -> {
                         finishTurn()
+                        startMic()
                         if (spokeAfterAction) confirmedAfterAction = true
                         lastActivity = now()
                     }
@@ -187,6 +203,7 @@ class LiveConversation(
             finishTurn()
             micJob?.cancel()
             watchdog.cancel()
+            greetingTimeout?.cancel()
             connection.close()
             player.stop()
         }
@@ -198,6 +215,8 @@ class LiveConversation(
             speechConfig = SpeechConfig(VoiceConfig(PrebuiltVoiceConfig(session.voiceName)), languageCode = "uk-UA"),
         ),
         systemInstruction = Content.system(session.systemPrompt),
+        // The user speaks Ukrainian: a hint for recognizing their speech instead of guessing the language
+        inputAudioTranscription = AudioTranscriptionConfig(languageCodes = listOf("uk-UA")),
         tools = session.tools.ifEmpty { null },
         // Keeps long conversations under the free-tier tokens-per-minute limit
         contextWindowCompression = ContextWindowCompression(
@@ -209,6 +228,9 @@ class LiveConversation(
     private companion object {
         /** How long to wait for the spoken confirmation of an action before closing anyway. */
         const val CONFIRM_WAIT_MS = 5_000L
+
+        /** After the wake phrase, how long the mic waits for the greeting to be answered. */
+        const val GREETING_WAIT_MS = 6_000L
     }
 
     /** RMS loudness of 16-bit PCM, scaled like SpeechRecognizer's rmsdB (about -2..10). */

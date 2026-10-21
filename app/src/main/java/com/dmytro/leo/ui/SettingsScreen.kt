@@ -12,11 +12,14 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -54,6 +57,8 @@ import com.dmytro.leo.R
 import com.dmytro.leo.accessibility.UiAgentService
 import com.dmytro.leo.brain.AgentConfig
 import com.dmytro.leo.data.AboutMeStore
+import com.dmytro.leo.data.MemoryFact
+import com.dmytro.leo.data.MemoryStore
 import com.dmytro.leo.messages.MessageNotificationService
 import com.dmytro.leo.voice.VoiceMode
 import com.dmytro.leo.voice.VoiceSettings
@@ -74,6 +79,22 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
         messagesOn = MessageNotificationService.isAllowed(context)
         onPauseOrDispose { }
     }
+    state.calibration?.let { CalibrationDialog(it, onRetry = viewModel::startCalibration, onClose = viewModel::closeCalibration) }
+
+    var editingFact by remember { mutableStateOf<MemoryFact?>(null) }
+    var confirmForgetAll by remember { mutableStateOf(false) }
+    editingFact?.let { fact ->
+        FactEditor(fact, onSave = { viewModel.updateFact(fact.id, it); editingFact = null }, onDismiss = { editingFact = null })
+    }
+    if (confirmForgetAll) {
+        AlertDialog(
+            onDismissRequest = { confirmForgetAll = false },
+            title = { Text("Забути все?") },
+            text = { Text("Leo забуде все, що дізнався про тебе з розмов. Розділ «Про мене» лишиться.") },
+            confirmButton = { TextButton(onClick = { viewModel.forgetAll(); confirmForgetAll = false }) { Text("Забути") } },
+            dismissButton = { TextButton(onClick = { confirmForgetAll = false }) { Text("Скасувати") } },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -91,9 +112,30 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
             section("Про мене")
             item(key = "about-me") { AboutMeEditor(saved = state.aboutMe, onSave = viewModel::saveAboutMe) }
 
+            memorySection(
+                state,
+                onEnabled = viewModel::setMemoryEnabled,
+                onEdit = { editingFact = it },
+                onRemove = viewModel::removeFact,
+                onForgetAll = { confirmForgetAll = true },
+            )
+
+            remindersSection(
+                state,
+                onSpeak = viewModel::setSpeakReminders,
+                onRemove = viewModel::removeReminder,
+                onPermissionsChanged = viewModel::permissionsChanged,
+            )
+
             section("Пробудження голосом")
             item(key = "wake") {
-                WakeSwitch(state.wake, state.wakeSensitivity, onToggle = viewModel::setWake, onSensitivity = viewModel::setWakeSensitivity)
+                WakeSwitch(
+                    state,
+                    onToggle = viewModel::setWake,
+                    onSensitivity = viewModel::setWakeSensitivity,
+                    onCalibrate = viewModel::startCalibration,
+                    onClearCalibration = viewModel::clearCalibration,
+                )
             }
 
             section("Голос розмови (Gemini Live)")
@@ -214,7 +256,7 @@ fun SettingsScreen(onBack: () -> Unit, viewModel: SettingsViewModel = viewModel(
     }
 }
 
-private fun LazyListScope.section(title: String) {
+internal fun LazyListScope.section(title: String) {
     item(key = "section-$title") {
         SectionTitle(title, Modifier.padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 6.dp))
     }
@@ -239,6 +281,75 @@ private fun LazyListScope.savedSection(title: String, items: List<SavedItem>, ho
     item(key = "divider-$title") { HorizontalDivider(Modifier.padding(top = 8.dp)) }
 }
 
+/** What Leo learned about the user over time, with edit, delete, "forget all" and an off switch. */
+private fun LazyListScope.memorySection(
+    state: SettingsUiState,
+    onEnabled: (Boolean) -> Unit,
+    onEdit: (MemoryFact) -> Unit,
+    onRemove: (Int) -> Unit,
+    onForgetAll: () -> Unit,
+) {
+    section("Що Leo про мене пам'ятає")
+    item(key = "memory-switch") {
+        Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Запам'ятовувати з розмов", style = MaterialTheme.typography.bodyLarge)
+                Text(
+                    "Leo сам запам'ятовує стійке про тебе (уподобання, звички, близьких) і після розмов зводить це докупи. " +
+                        "Зберігається на телефоні, але з кожним запитом іде в Gemini.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = state.memoryEnabled, onCheckedChange = onEnabled)
+        }
+    }
+    if (state.memory.isEmpty()) {
+        item(key = "memory-empty") { Hint("Поки нічого. Розкажи Leo про себе або скажи: «Запам'ятай, що…»") }
+    }
+    items(state.memory, key = { "memory-${it.id}" }) { fact ->
+        ListItem(
+            modifier = Modifier.clickable { onEdit(fact) },
+            headlineContent = { Text(fact.text) },
+            supportingContent = {
+                Text(if (fact.source == MemoryFact.Source.Said) "Запам'ятав під час розмови" else "Дізнався, переглядаючи розмови")
+            },
+            trailingContent = {
+                IconButton(onClick = { onRemove(fact.id) }) {
+                    Icon(painterResource(R.drawable.ic_delete), contentDescription = "Забути «${fact.text}»")
+                }
+            },
+        )
+    }
+    if (state.memory.isNotEmpty()) {
+        item(key = "memory-forget-all") {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onForgetAll) { Text("Забути все") }
+            }
+        }
+    }
+    item(key = "divider-memory") { HorizontalDivider(Modifier.padding(top = 8.dp)) }
+}
+
+@Composable
+private fun FactEditor(fact: MemoryFact, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable(fact.id) { mutableStateOf(fact.text) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Що Leo пам'ятає") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.take(MemoryStore.MAX_FACT_CHARS) },
+                modifier = Modifier.fillMaxWidth(),
+                supportingText = { Text("Порожній текст — забути цей факт") },
+            )
+        },
+        confirmButton = { TextButton(onClick = { onSave(text) }) { Text("Зберегти") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Скасувати") } },
+    )
+}
+
 @Composable
 private fun Choice(title: String, detail: String?, selected: Boolean, onClick: () -> Unit) {
     Row(
@@ -254,7 +365,7 @@ private fun Choice(title: String, detail: String?, selected: Boolean, onClick: (
 }
 
 @Composable
-private fun Hint(text: String) {
+internal fun Hint(text: String) {
     Text(
         text,
         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -287,11 +398,13 @@ private fun AboutMeEditor(saved: String, onSave: (String) -> Unit) {
 
 @Composable
 private fun WakeSwitch(
-    wake: WakeUi,
-    sensitivity: WakeSensitivity,
+    state: SettingsUiState,
     onToggle: (Boolean) -> Unit,
     onSensitivity: (WakeSensitivity) -> Unit,
+    onCalibrate: () -> Unit,
+    onClearCalibration: () -> Unit,
 ) {
+    val wake = state.wake
     Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -317,22 +430,105 @@ private fun WakeSwitch(
             is WakeUi.Failed -> Text(wake.message, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
             WakeUi.On -> {
                 Text("Чутливість мікрофона", style = MaterialTheme.typography.bodyMedium)
+                val levels = WakeSensitivity.entries.filter { it != WakeSensitivity.Personal || state.wakeCalibrated }
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    WakeSensitivity.entries.forEachIndexed { i, level ->
+                    levels.forEachIndexed { i, level ->
                         SegmentedButton(
-                            selected = level == sensitivity,
+                            selected = level == state.wakeSensitivity,
                             onClick = { onSensitivity(level) },
-                            shape = SegmentedButtonDefaults.itemShape(i, WakeSensitivity.entries.size),
-                        ) { Text(level.label) }
+                            shape = SegmentedButtonDefaults.itemShape(i, levels.size),
+                        ) { Text(level.label, maxLines = 1) }
                     }
                 }
                 Text(
-                    "Висока чує здалеку, але частіше прокидається від сторонньої розмови.",
+                    "Висока чує здалеку, але частіше прокидається від сторонньої розмови. " +
+                        "Калібрування підбере чутливість під твій голос і запам'ятає, як Leo тебе чує.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onCalibrate) {
+                        Text(if (state.wakeCalibrated) "Відкалібрувати ще раз" else "Відкалібрувати під мій голос")
+                    }
+                    if (state.wakeCalibrated) TextButton(onClick = onClearCalibration) { Text("Скинути") }
+                }
             }
             else -> Unit
         }
     }
 }
+
+@Composable
+private fun CalibrationDialog(calibration: CalibrationUi, onRetry: () -> Unit, onClose: () -> Unit) {
+    val finished = calibration is CalibrationUi.Done || calibration is CalibrationUi.Failed
+    AlertDialog(
+        onDismissRequest = { if (finished) onClose() },
+        title = { Text("Калібрування «Привіт, Leo»") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                when (calibration) {
+                    CalibrationUi.Preparing -> {
+                        Text("Говори як зазвичай, з місця, звідки кличеш Leo найчастіше. Готуюся…")
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    is CalibrationUi.Recording -> {
+                        Text(
+                            "Скажи «Привіт, Leo» — ${calibration.sample} з ${calibration.total}",
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Text("Гучність", style = MaterialTheme.typography.bodySmall)
+                        // Speech is around 0.05–0.3 of full scale: stretch it so the meter moves visibly
+                        LinearProgressIndicator(
+                            progress = { (calibration.level * 4f).coerceIn(0f, 1f) },
+                            modifier = Modifier.fillMaxWidth().height(10.dp),
+                        )
+                        LinearProgressIndicator(
+                            progress = { calibration.progress },
+                            modifier = Modifier.fillMaxWidth(),
+                            color = MaterialTheme.colorScheme.secondary,
+                        )
+                    }
+                    is CalibrationUi.Analyzing -> {
+                        Text("Підбираю чутливість під твій голос…")
+                        LinearProgressIndicator(progress = { calibration.progress }, modifier = Modifier.fillMaxWidth())
+                    }
+                    is CalibrationUi.Done -> {
+                        val r = calibration.result
+                        Text("Готово: впізнав ${r.hits} з ${r.samples} разів, підсилення ×${formatGain(r.gain)}.")
+                        if (r.hits < r.samples) {
+                            Text(
+                                "Не всі спроби вдалися — можна повторити, говорячи трохи чіткіше.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text("Як Leo тебе почув:", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            r.heard.joinToString("\n") { "• ${it.ifBlank { "(тиша)" }}" },
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        if (r.learned.isNotEmpty()) {
+                            Text(
+                                "Запам'ятав твої варіанти: ${r.learned.joinToString(", ") { "«$it»" }}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    }
+                    is CalibrationUi.Failed -> Text(calibration.message, color = MaterialTheme.colorScheme.error)
+                }
+            }
+        },
+        confirmButton = {
+            when (calibration) {
+                is CalibrationUi.Done -> TextButton(onClick = onClose) { Text("Готово") }
+                is CalibrationUi.Failed -> TextButton(onClick = onRetry) { Text("Ще раз") }
+                else -> Unit
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onClose) { Text(if (finished) "Закрити" else "Скасувати") }
+        },
+    )
+}
+
+private fun formatGain(gain: Float) = if (gain % 1f == 0f) gain.toInt().toString() else gain.toString().replace('.', ',')

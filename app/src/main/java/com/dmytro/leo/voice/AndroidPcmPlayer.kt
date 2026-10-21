@@ -19,7 +19,11 @@ import kotlin.concurrent.thread
  * phone's echo canceller remove this voice from the microphone, so the model does
  * not hear itself and the user can interrupt it.
  */
-class AndroidPcmPlayer(context: Context) : PcmPlayer {
+class AndroidPcmPlayer(
+    context: Context,
+    /** False for speaking only (a reminder): no microphone to protect, so no call mode — normal speaker volume. */
+    private val callMode: Boolean = true,
+) : PcmPlayer {
 
     private val audioManager = context.applicationContext.getSystemService(AudioManager::class.java)
 
@@ -40,12 +44,12 @@ class AndroidPcmPlayer(context: Context) : PcmPlayer {
         get() = SystemClock.elapsedRealtime() < speakingUntil
 
     override fun start() {
-        enterCallMode()
+        if (callMode) enterCallMode()
         val minBuffer = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
         val newTrack = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                    .setUsage(if (callMode) AudioAttributes.USAGE_VOICE_COMMUNICATION else AudioAttributes.USAGE_ASSISTANT)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
@@ -114,7 +118,7 @@ class AndroidPcmPlayer(context: Context) : PcmPlayer {
             track = null
         }
         speakingUntil = 0L
-        leaveCallMode()
+        if (callMode) leaveCallMode()
     }
 
     private fun enterCallMode() {

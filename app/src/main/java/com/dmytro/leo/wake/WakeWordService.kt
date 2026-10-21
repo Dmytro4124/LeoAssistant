@@ -1,6 +1,5 @@
 package com.dmytro.leo.wake
 
-import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -9,13 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.AudioFormat
 import android.media.AudioManager
-import android.media.AudioRecord
-import android.media.MediaRecorder
 import android.media.ToneGenerator
-import android.media.audiofx.AutomaticGainControl
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -101,41 +97,36 @@ class WakeWordService : Service() {
     }
 
     /** Reads the mic until the wake phrase (true) or until a conversation starts elsewhere (false). */
-    @SuppressLint("MissingPermission") // only started after RECORD_AUDIO was granted
     private fun listenOnce(model: Model, conversationStarted: () -> Boolean): Boolean {
-        val bufferSize = maxOf(AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT), CHUNK * 4)
-        val recorder = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufferSize)
         // Free transcription (no grammar): the model has no "лео", see WakePhrase
-        val recognizer = Recognizer(model, SAMPLE_RATE.toFloat())
-        // The phone's own automatic gain control, if it has one for this source
-        val agc = if (AutomaticGainControl.isAvailable()) AutomaticGainControl.create(recorder.audioSessionId)?.apply { enabled = true } else null
+        val recognizer = Recognizer(model, WakeMic.SAMPLE_RATE.toFloat())
+        val learned = learnedPhrases(this)
+        val matcher = WakePhrase.Matcher(learned)
         try {
-            recorder.startRecording()
-            val buffer = ByteArray(CHUNK)
-            Log.d(TAG, "listening (recorder state ${recorder.recordingState})")
-            while (scope.isActive && !conversationStarted()) {
-                val read = recorder.read(buffer, 0, buffer.size)
-                if (read <= 0) {
-                    Log.w(TAG, "mic read returned $read")
-                    continue
+            WakeMic().use { mic ->
+                val buffer = ByteArray(WakeMic.CHUNK)
+                Log.d(TAG, "listening (recorder state ${mic.state}, ${learned.size} learned phrases)")
+                while (scope.isActive && !conversationStarted()) {
+                    val read = mic.read(buffer)
+                    if (read <= 0) {
+                        Log.w(TAG, "mic read returned $read")
+                        continue
+                    }
+                    AudioGain.apply(buffer, read, gain(this))
+                    val isFinal = recognizer.acceptWaveForm(buffer, read)
+                    val heard = if (isFinal) recognizer.result else recognizer.partialResult
+                    val text = WakePhrase.textOf(heard)
+                    // For tuning: only phrases with a greeting are logged, never other speech
+                    if (isFinal && text.isNotBlank() && WakePhrase.hasGreeting(text)) Log.d(TAG, "heard: \"$text\"")
+                    if (matcher.hear(text, isFinal, SystemClock.elapsedRealtime())) {
+                        Log.d(TAG, "wake phrase: $text")
+                        return true
+                    }
                 }
-                AudioGain.apply(buffer, read, sensitivity(this).gain)
-                val isFinal = recognizer.acceptWaveForm(buffer, read)
-                val heard = if (isFinal) recognizer.result else recognizer.partialResult
-                val text = WakePhrase.textOf(heard)
-                // For tuning: only phrases with a greeting are logged, never other speech
-                if (isFinal && WakePhrase.hasGreeting(text)) Log.d(TAG, "greeting heard: \"$text\"")
-                if (WakePhrase.matches(text)) {
-                    Log.d(TAG, "wake phrase: $text")
-                    return true
-                }
+                return false
             }
-            return false
         } finally {
-            recorder.stop()
-            recorder.release()
             recognizer.close()
-            agc?.release()
         }
     }
 
@@ -175,11 +166,11 @@ class WakeWordService : Service() {
         private const val CHANNEL_ID = "wake_word"
         private const val NOTIFICATION_ID = 2
         private const val ACTION_TURN_OFF = "com.dmytro.leo.WAKE_OFF"
-        private const val SAMPLE_RATE = 16_000
-        private const val CHUNK = 4096
         private const val PREFS = "wake_word"
         private const val KEY_ENABLED = "enabled"
         private const val KEY_SENSITIVITY = "sensitivity"
+        private const val KEY_GAIN = "calibrated_gain"
+        private const val KEY_LEARNED = "learned_phrases"
 
         fun isEnabled(context: Context) =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_ENABLED, false)
@@ -196,6 +187,35 @@ class WakeWordService : Service() {
         /** Takes effect right away: the listener reads it for every chunk of audio. */
         fun setSensitivity(context: Context, value: WakeSensitivity) =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit { putString(KEY_SENSITIVITY, value.name) }
+
+        /** The microphone gain in use: the chosen level's, or the calibrated one for [WakeSensitivity.Personal]. */
+        fun gain(context: Context): Float {
+            val level = sensitivity(context)
+            return if (level == WakeSensitivity.Personal) {
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getFloat(KEY_GAIN, WakeSensitivity.Medium.gain)
+            } else level.gain
+        }
+
+        fun isCalibrated(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).contains(KEY_GAIN)
+
+        /** How the recognizer hears this user's phrase (from calibration); used at every sensitivity. */
+        fun learnedPhrases(context: Context): Set<String> =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getStringSet(KEY_LEARNED, null).orEmpty()
+
+        /** Saves the calibration and switches to it. The listener picks the phrases up on its next round. */
+        fun saveCalibration(context: Context, result: WakeCalibration.Result) =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+                putFloat(KEY_GAIN, result.gain)
+                putStringSet(KEY_LEARNED, result.learned)
+                putString(KEY_SENSITIVITY, WakeSensitivity.Personal.name)
+            }
+
+        fun clearCalibration(context: Context) =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit {
+                remove(KEY_GAIN)
+                remove(KEY_LEARNED)
+                if (sensitivity(context) == WakeSensitivity.Personal) putString(KEY_SENSITIVITY, WakeSensitivity.Medium.name)
+            }
 
         /** Call while one of our screens is visible: Android allows starting the mic service only then. */
         fun startIfEnabled(context: Context) {

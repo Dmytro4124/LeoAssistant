@@ -42,13 +42,22 @@ object ScreenFormatter {
         val lines = mutableListOf("Програма: $app")
         val elements = linkedMapOf<Int, UiElement>()
         val seenTexts = mutableSetOf<String>()
+        var cut = false
 
         fun walk(node: UiNode, path: List<Int>, insideInteractive: Boolean) {
-            if (lines.size >= maxLines) return
+            // Past the limit only labelled buttons are still listed: on a long feed the floating
+            // ones ("Перейти вниз") come last in the tree and would otherwise get no number
+            val full = lines.size >= maxLines
+            if (lines.size >= maxLines + EXTRA_BUTTONS) {
+                cut = true
+                return
+            }
             val label = labelOf(node, maxText)
             val interactive = node.enabled && (node.clickable || node.editable || node.checkable || node.scrollable)
 
-            if (interactive) {
+            if (full && !(interactive && label != null && !node.scrollable)) {
+                if (label != null || interactive) cut = true
+            } else if (interactive) {
                 val id = elements.size + 1
                 val role = roleOf(node)
                 // A clickable row often has no label of its own: use the texts inside it (not for lists)
@@ -63,9 +72,12 @@ object ScreenFormatter {
         }
 
         walk(root, emptyList(), insideInteractive = false)
-        if (lines.size >= maxLines) lines += "… (екран довший, можна прокрутити)"
+        if (cut) lines += "… (екран довший, можна прокрутити)"
         return Screen(app, lines.joinToString("\n"), elements)
     }
+
+    /** How many more labelled buttons are listed after [format]'s maxLines. */
+    private const val EXTRA_BUTTONS = 30
 
     private fun labelOf(node: UiNode, maxText: Int): String? {
         // Never show what is typed into a password field

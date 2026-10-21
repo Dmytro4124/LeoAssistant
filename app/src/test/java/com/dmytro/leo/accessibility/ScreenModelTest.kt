@@ -63,6 +63,24 @@ class ScreenModelTest {
     }
 
     @Test
+    fun `buttons after a long feed still get numbers, long texts only in full mode`() {
+        val post = "Пост: " + "дуже довгий текст ".repeat(20)
+        val feed = UiNode(
+            children = List(300) { UiNode(text = "Повідомлення $it") } +
+                UiNode(className = "android.widget.ImageButton", description = "Перейти вниз", clickable = true) +
+                UiNode(text = post),
+        )
+        val screen = ScreenFormatter.format("Telegram", feed, maxLines = 50)
+        assertEquals("Перейти вниз", screen.elements.values.single().label)
+        assertTrue(screen.text.contains("[1] кнопка «Перейти вниз»"))
+        assertTrue(screen.text.endsWith("можна прокрутити)"))
+
+        val short = UiNode(children = listOf(UiNode(text = post)))
+        assertFalse(ScreenFormatter.format("Telegram", short).text.contains(post.trim()))
+        assertTrue(ScreenFormatter.format("Telegram", short, maxText = 1500).text.contains(post.trim()))
+    }
+
+    @Test
     fun `identifiers are masked before they reach Gemini`() {
         assertEquals("Номер телефону · •••", Redactor.redact("Номер телефону · +380 67 123 4567"))
         assertEquals("IMEI · •••", Redactor.redact("IMEI · 357481898657425"))
